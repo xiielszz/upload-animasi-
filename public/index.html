@@ -1,0 +1,738 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Roblox Tools — Inspector &amp; Bulk Uploader</title>
+<style>
+  :root{
+    --bg:#0f1115; --panel:#161922; --panel-2:#1d212c; --line:#2a2f3d; --grid:#191d27;
+    --text:#e7e9ee; --dim:#8b93a7; --accent:#ff4d4f; --accent-dim:#5c2325;
+    --good:#3ecf8e; --good-dim:#123a2c; --warn:#e8b33d; --warn-dim:#3a2f10;
+    --mono: ui-monospace, "SF Mono", "Cascadia Mono", "JetBrains Mono", Consolas, monospace;
+    --sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Inter, sans-serif;
+  }
+  *{box-sizing:border-box;}
+  body{
+    margin:0; min-height:100vh;
+    background:
+      linear-gradient(var(--grid) 1px, transparent 1px) 0 0/28px 28px,
+      linear-gradient(90deg, var(--grid) 1px, transparent 1px) 0 0/28px 28px,
+      var(--bg);
+    color:var(--text); font-family:var(--sans);
+  }
+  .wrap{max-width:1040px;margin:0 auto;padding:32px 20px 60px;}
+  .eyebrow{font-family:var(--mono); font-size:12px; letter-spacing:.14em; text-transform:uppercase; color:var(--accent); margin:0 0 8px;}
+  h1{margin:0 0 6px;font-size:26px;font-weight:700;}
+  p.sub{margin:0 0 22px;color:var(--dim);font-size:14px;max-width:680px;line-height:1.5;}
+
+  .tabs{display:flex; gap:6px; margin-bottom:20px; border-bottom:1px solid var(--line);}
+  .tab-btn{
+    font-family:var(--mono); font-size:13px; background:none; border:none; color:var(--dim);
+    padding:10px 18px; cursor:pointer; border-bottom:2px solid transparent; margin-bottom:-1px;
+  }
+  .tab-btn.active{color:var(--text); border-bottom-color:var(--accent);}
+  .tab-panel{display:none;}
+  .tab-panel.active{display:block;}
+
+  .card{background:var(--panel); border:1px solid var(--line); border-radius:10px; padding:16px 18px;}
+  .card h2{font-size:11px; text-transform:uppercase; letter-spacing:.1em; color:var(--dim); margin:0 0 12px; font-family:var(--mono);}
+  .grid{display:grid; grid-template-columns:300px 1fr; gap:16px; margin-top:20px;}
+  @media (max-width:780px){ .grid{grid-template-columns:1fr;} }
+
+  .kv{display:flex; justify-content:space-between; gap:10px; font-size:13px; padding:5px 0; border-bottom:1px dashed var(--line);}
+  .kv:last-child{border-bottom:none;}
+  .kv span:first-child{color:var(--dim);}
+  .kv span:last-child{font-family:var(--mono); text-align:right;}
+  .badge{display:inline-block; font-family:var(--mono); font-size:11px; padding:2px 8px; border-radius:20px; border:1px solid var(--line); color:var(--dim);}
+  .badge.xml{color:var(--good); border-color:var(--good);}
+  .badge.bin{color:var(--warn); border-color:var(--warn);}
+
+  .drop{margin-top:6px; border:1.5px dashed var(--line); border-radius:10px; background:var(--panel); padding:34px 20px; text-align:center; cursor:pointer; transition:border-color .15s, background .15s;}
+  .drop.drag{border-color:var(--accent); background:var(--panel-2);}
+  .drop .hint{color:var(--dim); font-size:13px; margin-top:6px;}
+  input[type=file]{display:none;}
+
+  .tree{font-family:var(--mono); font-size:13px; line-height:1.7; overflow:auto; max-height:520px;}
+  .node .cls{color:var(--accent); cursor:pointer;}
+  .node .nm{color:var(--text); cursor:pointer;}
+  .node .count{color:var(--dim);}
+  .toggle{display:inline-block;width:14px;color:var(--dim);}
+  .children{margin-left:16px; border-left:1px solid var(--line); padding-left:8px;}
+  .props{font-family:var(--mono); font-size:12.5px; margin-top:6px;}
+  .empty{color:var(--dim); font-size:13px; font-family:var(--mono);}
+  .notice{margin-top:14px; padding:10px 12px; border-radius:8px; font-size:12.5px; line-height:1.6; background:var(--accent-dim); color:#ffd7d8; border:1px solid #7a2c2e;}
+  .notice.info{background:var(--warn-dim); color:#ffe9b8; border-color:#6b5518;}
+  .toolbar{display:flex; gap:8px; margin-bottom:12px; flex-wrap:wrap;}
+  button.small{font-family:var(--mono); font-size:11px; background:var(--panel-2); color:var(--text); border:1px solid var(--line); border-radius:6px; padding:5px 10px; cursor:pointer;}
+  button.small:hover{border-color:var(--accent);}
+
+  /* bulk upload */
+  .field-row{display:flex; gap:12px; flex-wrap:wrap; margin-bottom:14px;}
+  .field{display:flex; flex-direction:column; gap:5px; font-size:12px; color:var(--dim); font-family:var(--mono);}
+  .field input, .field select{
+    background:var(--panel-2); border:1px solid var(--line); color:var(--text); border-radius:6px;
+    padding:7px 9px; font-family:var(--sans); font-size:13px; min-width:180px;
+  }
+  .btn{
+    font-family:var(--mono); font-size:13px; background:var(--accent); color:#fff; border:none;
+    border-radius:8px; padding:9px 18px; cursor:pointer; font-weight:600;
+  }
+  .btn:disabled{opacity:.5; cursor:not-allowed;}
+  .btn.ghost{background:var(--panel-2); color:var(--text); border:1px solid var(--line); font-weight:400;}
+
+  table.batch{width:100%; border-collapse:collapse; font-size:13px; margin-top:14px;}
+  table.batch th{text-align:left; font-family:var(--mono); font-size:11px; text-transform:uppercase; color:var(--dim); padding:8px 6px; border-bottom:1px solid var(--line);}
+  table.batch td{padding:7px 6px; border-bottom:1px solid var(--line); vertical-align:middle;}
+  table.batch input{width:100%; background:var(--panel-2); border:1px solid var(--line); color:var(--text); border-radius:5px; padding:5px 7px; font-size:12.5px;}
+  .status-pill{font-family:var(--mono); font-size:11px; padding:3px 8px; border-radius:20px; border:1px solid var(--line); color:var(--dim); white-space:nowrap;}
+  .status-pill.uploading{color:var(--warn); border-color:var(--warn);}
+  .status-pill.success{color:var(--good); border-color:var(--good);}
+  .status-pill.error{color:var(--accent); border-color:var(--accent);}
+  .filename{font-family:var(--mono); font-size:12px; color:var(--dim);}
+  .link{color:var(--good); text-decoration:none;}
+  .link:hover{text-decoration:underline;}
+
+  .signature{margin-top:26px; padding-top:16px; border-top:1px solid var(--line); font-family:var(--mono); font-size:11px; color:var(--dim); text-align:center;}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <p class="eyebrow">// personal use tools</p>
+  <h1>Roblox Tools</h1>
+  <p class="sub">Inspect file .rbxm / .rbxmx dan bulk-upload animasi ke Roblox lewat Open Cloud Assets API. API key disimpan aman di server (env variable), tidak pernah terkirim ke browser.</p>
+
+  <div class="tabs">
+    <button class="tab-btn active" data-tab="inspector">Inspector</button>
+    <button class="tab-btn" data-tab="bulk">Bulk Upload Animasi</button>
+  </div>
+
+  <!-- ============ TAB 1: INSPECTOR ============ -->
+  <div class="tab-panel active" id="panel-inspector">
+    <div class="drop" id="drop">
+      <b>Klik untuk pilih file</b>, atau drag &amp; drop di sini<br>
+      <span class="hint">.rbxm · .rbxmx — diproses 100% di browser kamu</span>
+      <input type="file" id="file" accept=".rbxm,.rbxmx">
+    </div>
+    <div id="result"></div>
+  </div>
+
+  <!-- ============ TAB 2: BULK UPLOAD ============ -->
+  <div class="tab-panel" id="panel-bulk">
+    <div class="notice info">
+      <b>Penting:</b> 1 file yang diupload ke Roblox = 1 asset Animation. Kalau kamu punya 1 file gabungan
+      berisi banyak animasi, upload langsung file itu cuma jadi <i>satu</i> asset saja. Karena itu di bawah
+      ada <b>Opsi A</b> untuk otomatis memecah 1 file <code>.rbxmx</code> jadi banyak file per-animasi
+      (dideteksi dari tiap instance <code>KeyframeSequence</code>) sebelum diupload satu-satu. Kalau filemu
+      masih <code>.rbxm</code> biner, split otomatis tidak bisa (formatnya proprietary) — save as
+      <code>.rbxmx</code> dulu di Studio, baru pakai Opsi A.
+    </div>
+
+    <div class="card" style="margin-top:14px;">
+      <h2>Pengaturan Default</h2>
+      <div class="field-row">
+        <div class="field">
+          <label>Creator type</label>
+          <select id="creatorType">
+            <option value="user">User (akun pribadi)</option>
+            <option value="group">Group</option>
+          </select>
+        </div>
+        <div class="field">
+          <label>Creator ID (userId / groupId)</label>
+          <input id="creatorId" placeholder="mis. 123456789">
+        </div>
+        <div class="field">
+          <label>Prefix nama (opsional)</label>
+          <input id="namePrefix" placeholder="mis. Emote_">
+        </div>
+      </div>
+      <div id="configNote" class="empty"></div>
+    </div>
+
+    <div class="card" style="margin-top:14px;">
+      <h2>Opsi A — Split Otomatis dari 1 File Gabungan</h2>
+      <p class="empty" style="margin:0 0 10px;">Upload 1 file <b>.rbxmx</b> yang isinya banyak animasi (KeyframeSequence) digabung — tool ini otomatis memecahnya jadi file terpisah per animasi, lalu masuk ke daftar upload di bawah.</p>
+      <div class="drop" id="dropSplit">
+        <b>Klik untuk pilih 1 file gabungan</b>, atau drag &amp; drop di sini<br>
+        <span class="hint">.rbxmx (XML) saja — .rbxm biner tidak bisa di-split otomatis</span>
+        <input type="file" id="fileSplit" accept=".rbxmx,.rbxm">
+      </div>
+      <div id="splitStatus"></div>
+    </div>
+
+    <div class="card" style="margin-top:14px;">
+      <h2>Opsi B — Upload File yang Sudah Terpisah</h2>
+      <p class="empty" style="margin:0 0 10px;">Kalau kamu sudah punya file per-animasi (hasil split manual atau dari Opsi A), pilih semuanya di sini.</p>
+      <div class="drop" id="dropBulk">
+        <b>Klik untuk pilih beberapa file</b>, atau drag &amp; drop di sini<br>
+        <span class="hint">.rbxm · .rbxmx — masing-masing file dianggap 1 animasi</span>
+        <input type="file" id="fileBulk" accept=".rbxm,.rbxmx" multiple>
+      </div>
+
+      <div id="batchArea" style="display:none;">
+        <div class="toolbar" style="margin-top:16px;">
+          <button class="btn" id="uploadAllBtn">Upload Semua</button>
+          <button class="btn ghost small" id="clearBatchBtn">Kosongkan daftar</button>
+          <span class="empty" id="batchSummary" style="align-self:center;"></span>
+        </div>
+        <table class="batch">
+          <thead>
+            <tr>
+              <th style="width:26%">File</th>
+              <th style="width:24%">Display Name</th>
+              <th style="width:28%">Description</th>
+              <th style="width:12%">Status</th>
+              <th style="width:10%">Aksi</th>
+            </tr>
+          </thead>
+          <tbody id="batchBody"></tbody>
+        </table>
+      </div>
+    </div>
+
+    <div class="card" id="finalSummaryCard" style="margin-top:14px; display:none;">
+      <h2>Ringkasan Hasil</h2>
+      <div class="toolbar">
+        <button class="small" id="downloadCsvBtn">Download CSV</button>
+        <button class="small" id="copySummaryBtn">Copy sebagai teks</button>
+      </div>
+      <table class="batch">
+        <thead>
+          <tr><th style="width:40%">Nama Animasi</th><th style="width:25%">Asset ID</th><th style="width:20%">Status</th><th style="width:15%">Link</th></tr>
+        </thead>
+        <tbody id="finalSummaryBody"></tbody>
+      </table>
+    </div>
+  </div>
+
+  <div class="signature">roblox-tools · inspector berjalan client-side, upload lewat server proxy</div>
+</div>
+
+<script>
+/* ---------------------------------------------------------------- */
+/* Tabs                                                               */
+/* ---------------------------------------------------------------- */
+document.querySelectorAll('.tab-btn').forEach(btn => {
+  btn.addEventListener('click', () => {
+    document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+    document.querySelectorAll('.tab-panel').forEach(p => p.classList.remove('active'));
+    btn.classList.add('active');
+    document.getElementById('panel-' + btn.dataset.tab).classList.add('active');
+  });
+});
+
+/* ---------------------------------------------------------------- */
+/* Shared helpers                                                     */
+/* ---------------------------------------------------------------- */
+function escapeHtml(s){
+  return String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+}
+function formatBytes(n){
+  if (n < 1024) return n + ' B';
+  if (n < 1024*1024) return (n/1024).toFixed(1) + ' KB';
+  return (n/1024/1024).toFixed(2) + ' MB';
+}
+function kv(k, v){ return `<div class="kv"><span>${k}</span><span>${v}</span></div>`; }
+
+/* ================================================================ */
+/* TAB 1: INSPECTOR (client-side parsing, same as standalone viewer)  */
+/* ================================================================ */
+(function(){
+  const dropEl = document.getElementById('drop');
+  const fileEl = document.getElementById('file');
+  const resultEl = document.getElementById('result');
+
+  dropEl.addEventListener('click', () => fileEl.click());
+  ['dragenter','dragover'].forEach(ev => dropEl.addEventListener(ev, e => { e.preventDefault(); dropEl.classList.add('drag'); }));
+  ['dragleave','drop'].forEach(ev => dropEl.addEventListener(ev, e => { e.preventDefault(); dropEl.classList.remove('drag'); }));
+  dropEl.addEventListener('drop', e => { const f = e.dataTransfer.files[0]; if (f) handleFile(f); });
+  fileEl.addEventListener('change', e => { const f = e.target.files[0]; if (f) handleFile(f); });
+
+  async function handleFile(file){
+    resultEl.innerHTML = '<p class="empty">Membaca file...</p>';
+    const buf = await file.arrayBuffer();
+    const bytes = new Uint8Array(buf);
+    const isXml = looksLikeXml(bytes);
+    try{
+      if (isXml){
+        const text = new TextDecoder('utf-8').decode(bytes);
+        renderXml(file, text, bytes.length);
+      } else {
+        renderBinary(file, bytes);
+      }
+    }catch(err){
+      resultEl.innerHTML = `<div class="notice"><b>Gagal parsing:</b> ${escapeHtml(err.message || String(err))}</div>`;
+    }
+  }
+
+  function looksLikeXml(bytes){
+    let head = new TextDecoder('utf-8').decode(bytes.slice(0, 64)).trimStart();
+    return head.startsWith('<?xml') || head.startsWith('<roblox ') || head.startsWith('<roblox\n') || head.startsWith('<roblox>');
+  }
+
+  function renderXml(file, text, size){
+    const doc = new DOMParser().parseFromString(text, 'application/xml');
+    const perr = doc.querySelector('parsererror');
+    if (perr) throw new Error('XML tidak valid / bukan file rbxmx yang sah.');
+
+    const root = doc.documentElement;
+    const topItems = Array.from(root.children).filter(el => el.tagName === 'Item');
+    const allItems = Array.from(root.getElementsByTagName('Item'));
+    const classCounts = {};
+    allItems.forEach(it => { const c = it.getAttribute('class') || '?'; classCounts[c] = (classCounts[c]||0) + 1; });
+
+    let html = '';
+    html += `<div class="grid">`;
+    html += `<div class="card"><h2>File Info <span class="badge xml">RBXMX · XML</span></h2>`;
+    html += kv('Nama file', escapeHtml(file.name));
+    html += kv('Ukuran', formatBytes(size));
+    html += kv('Total instance', allItems.length);
+    html += kv('Root children', topItems.length);
+    html += `</div>`;
+
+    html += `<div class="card"><h2>Class Summary</h2>`;
+    const sorted = Object.entries(classCounts).sort((a,b)=>b[1]-a[1]);
+    sorted.slice(0, 12).forEach(([cls, n]) => { html += kv(escapeHtml(cls), n); });
+    if (sorted.length > 12) html += `<div class="empty" style="margin-top:6px;">+${sorted.length-12} class lainnya</div>`;
+    html += `</div></div>`;
+
+    html += `<div class="card" style="margin-top:16px;">`;
+    html += `<h2>Instance Tree</h2>`;
+    html += `<div class="toolbar"><button class="small" id="expandAll">Expand semua</button><button class="small" id="collapseAll">Collapse semua</button></div>`;
+    html += `<div class="tree" id="tree">`;
+    html += topItems.map(item => renderItemNode(item)).join('');
+    html += `</div></div>`;
+
+    resultEl.innerHTML = html;
+
+    document.getElementById('expandAll').onclick = () => toggleAll(true);
+    document.getElementById('collapseAll').onclick = () => toggleAll(false);
+
+    resultEl.querySelectorAll('.node .toggle, .node .cls').forEach(el => {
+      el.addEventListener('click', (e) => {
+        const node = e.currentTarget.closest('.node');
+        const kids = node.parentElement.querySelector(':scope > .children');
+        if (!kids) return;
+        const collapsed = kids.style.display === 'none';
+        kids.style.display = collapsed ? '' : 'none';
+        const t = node.querySelector('.toggle');
+        if (t.textContent) t.textContent = collapsed ? '▾' : '▸';
+      });
+    });
+
+    resultEl.querySelectorAll('.nm').forEach(el => {
+      el.addEventListener('click', (e) => {
+        const wrap = e.currentTarget.closest('[data-id]');
+        const propsBox = wrap.querySelector(':scope > .props');
+        if (propsBox) propsBox.style.display = propsBox.style.display === 'none' ? '' : 'none';
+      });
+    });
+  }
+
+  let nodeCounter = 0;
+  function renderItemNode(item){
+    const id = 'n' + (nodeCounter++);
+    const cls = item.getAttribute('class') || 'Instance';
+    const props = item.querySelector(':scope > Properties');
+    const nameEl = props ? Array.from(props.children).find(p => p.getAttribute('name') === 'Name') : null;
+    const name = nameEl ? nameEl.textContent : cls;
+    const children = Array.from(item.children).filter(el => el.tagName === 'Item');
+
+    let propsHtml = '';
+    if (props){
+      const entries = Array.from(props.children).slice(0, 40);
+      propsHtml = `<div class="props" style="display:none;">` +
+        entries.map(p => {
+          const pname = p.getAttribute('name') || p.tagName;
+          let val = p.textContent.trim();
+          if (val.length > 60) val = val.slice(0,57) + '…';
+          return kv(escapeHtml(pname), escapeHtml(val || '—'));
+        }).join('') +
+        (entries.length < props.children.length ? `<div class="empty">+${props.children.length-entries.length} properti lain</div>` : '') +
+        `</div>`;
+    }
+
+    let out = `<div data-id="${id}">`;
+    out += `<div class="node">`;
+    out += `<span class="toggle">${children.length ? '▾' : ''}</span>`;
+    out += `<span class="cls">[${escapeHtml(cls)}]</span> `;
+    out += `<span class="nm">${escapeHtml(name)}</span>`;
+    if (children.length) out += ` <span class="count">(${children.length})</span>`;
+    out += `</div>`;
+    out += propsHtml;
+    if (children.length) out += `<div class="children">` + children.map(renderItemNode).join('') + `</div>`;
+    out += `</div>`;
+    return out;
+  }
+
+  function toggleAll(expand){
+    resultEl.querySelectorAll('.children').forEach(c => c.style.display = expand ? '' : 'none');
+    resultEl.querySelectorAll('.toggle').forEach(t => { if (t.textContent) t.textContent = expand ? '▾' : '▸'; });
+  }
+
+  function renderBinary(file, bytes){
+    const dv = new DataView(bytes.buffer);
+    const magicStr = Array.from(bytes.slice(0,16)).map(b => String.fromCharCode(b)).join('');
+    if (!magicStr.startsWith('<roblox!')) throw new Error('Bukan file .rbxm biner yang valid (magic header tidak cocok).');
+
+    let p = 16;
+    const version = dv.getUint16(p, true); p += 2;
+    const numClasses = dv.getInt32(p, true); p += 4;
+    const numInstances = dv.getInt32(p, true); p += 4;
+    p += 8;
+
+    const chunks = []; const classSummary = []; let metaEntries = [];
+    let sharedStrings = 0; let hasParentChunk = false; let warnings = [];
+
+    while (p < bytes.length){
+      if (p + 16 > bytes.length) break;
+      const compressedLen = dv.getInt32(p, true); p += 4;
+      const uncompressedLen = dv.getInt32(p, true); p += 4;
+      p += 4;
+      const dataStart = p;
+      let raw;
+      try{
+        if (compressedLen === 0){ raw = bytes.slice(dataStart, dataStart + uncompressedLen); p += uncompressedLen; }
+        else { const compData = bytes.slice(dataStart, dataStart + compressedLen); raw = lz4Decompress(compData, uncompressedLen); p += compressedLen; }
+      } catch(e){ warnings.push('Gagal decompress salah satu chunk: ' + e.message); break; }
+
+      const tag = String.fromCharCode(raw[0], raw[1], raw[2], raw[3]).replace(/\0/g,'');
+      chunks.push({ tag, size: raw.length });
+
+      try{
+        if (tag === 'META') metaEntries = parseMeta(raw);
+        else if (tag === 'INST') classSummary.push(parseInst(raw));
+        else if (tag === 'SSTR') sharedStrings++;
+        else if (tag === 'PRNT') hasParentChunk = true;
+      } catch(e){ warnings.push(`Gagal parsing chunk ${tag}: ` + e.message); }
+
+      if (tag === 'END') break;
+    }
+
+    let html = `<div class="grid">`;
+    html += `<div class="card"><h2>File Info <span class="badge bin">RBXM · Binary</span></h2>`;
+    html += kv('Nama file', escapeHtml(file.name));
+    html += kv('Ukuran', formatBytes(bytes.length));
+    html += kv('Format version', version);
+    html += kv('Class count (header)', numClasses);
+    html += kv('Instance count (header)', numInstances);
+    html += kv('Shared string chunks', sharedStrings);
+    html += kv('Ada data hierarki (PRNT)', hasParentChunk ? 'ya' : 'tidak');
+    html += `</div>`;
+
+    html += `<div class="card"><h2>Class Summary</h2>`;
+    if (classSummary.length){
+      classSummary.sort((a,b)=>b.count-a.count).forEach(c => html += kv(escapeHtml(c.className) + (c.isService ? ' (service)' : ''), c.count));
+    } else { html += `<div class="empty">Tidak ada chunk INST yang berhasil dibaca.</div>`; }
+    html += `</div></div>`;
+
+    if (metaEntries.length){
+      html += `<div class="card" style="margin-top:16px;"><h2>Metadata</h2>`;
+      metaEntries.forEach(([k,v]) => html += kv(escapeHtml(k), escapeHtml(v)));
+      html += `</div>`;
+    }
+
+    html += `<div class="card" style="margin-top:16px;"><h2>Chunk Layout</h2>`;
+    html += chunks.map(c => kv(c.tag || '(unknown)', formatBytes(c.size))).join('');
+    html += `</div>`;
+
+    html += `<div class="notice">
+      <b>Catatan:</b> file .rbxm biner menyimpan hierarki &amp; nilai properti dalam encoding integer khusus
+      Roblox yang tidak didekode tool ini — hanya ringkasan class, jumlah instance, dan metadata yang ditampilkan.
+      Untuk tree lengkap dengan semua properti: buka di Roblox Studio → <b>File → Save As</b> → format
+      <b>.rbxmx</b>, lalu buka file itu di sini.
+      ${warnings.length ? '<br><br>Peringatan parsing: ' + warnings.map(escapeHtml).join('; ') : ''}
+    </div>`;
+
+    resultEl.innerHTML = html;
+  }
+
+  function parseMeta(raw){
+    let p = 4; const view = new DataView(raw.buffer, raw.byteOffset, raw.byteLength);
+    const count = view.getInt32(p, true); p += 4; const out = [];
+    for (let i=0;i<count;i++){ const [k, np1] = readLenString(raw, view, p); p = np1; const [v, np2] = readLenString(raw, view, p); p = np2; out.push([k, v]); }
+    return out;
+  }
+  function parseInst(raw){
+    const view = new DataView(raw.buffer, raw.byteOffset, raw.byteLength);
+    let p = 4; p += 4;
+    const [className, np] = readLenString(raw, view, p); p = np;
+    const isService = raw[p]; p += 1;
+    const numInstances = view.getInt32(p, true); p += 4;
+    return { className, count: numInstances, isService: !!isService };
+  }
+  function readLenString(raw, view, p){
+    const len = view.getInt32(p, true); p += 4;
+    const bytes = raw.slice(p, p+len);
+    return [new TextDecoder('utf-8').decode(bytes), p+len];
+  }
+  function lz4Decompress(input, expectedSize){
+    const output = new Uint8Array(expectedSize);
+    let ip = 0, op = 0;
+    while (ip < input.length){
+      const token = input[ip++];
+      let litLen = token >> 4;
+      if (litLen === 15){ let b; do { b = input[ip++]; litLen += b; } while (b === 255); }
+      for (let i=0;i<litLen;i++) output[op++] = input[ip++];
+      if (ip >= input.length || op >= expectedSize) break;
+      const matchOffset = input[ip] | (input[ip+1] << 8); ip += 2;
+      let matchLen = token & 0x0f;
+      if (matchLen === 15){ let b; do { b = input[ip++]; matchLen += b; } while (b === 255); }
+      matchLen += 4;
+      let matchPos = op - matchOffset;
+      for (let i=0;i<matchLen;i++){ output[op] = output[matchPos]; op++; matchPos++; }
+    }
+    return output;
+  }
+})();
+
+/* ================================================================ */
+/* TAB 2: BULK UPLOAD                                                */
+/* ================================================================ */
+(function(){
+  const dropBulk = document.getElementById('dropBulk');
+  const fileBulk = document.getElementById('fileBulk');
+  const batchArea = document.getElementById('batchArea');
+  const batchBody = document.getElementById('batchBody');
+  const batchSummary = document.getElementById('batchSummary');
+  const uploadAllBtn = document.getElementById('uploadAllBtn');
+  const clearBatchBtn = document.getElementById('clearBatchBtn');
+  const creatorType = document.getElementById('creatorType');
+  const creatorId = document.getElementById('creatorId');
+  const namePrefix = document.getElementById('namePrefix');
+  const configNote = document.getElementById('configNote');
+
+  const dropSplit = document.getElementById('dropSplit');
+  const fileSplit = document.getElementById('fileSplit');
+  const splitStatus = document.getElementById('splitStatus');
+
+  const finalSummaryCard = document.getElementById('finalSummaryCard');
+  const finalSummaryBody = document.getElementById('finalSummaryBody');
+  const downloadCsvBtn = document.getElementById('downloadCsvBtn');
+  const copySummaryBtn = document.getElementById('copySummaryBtn');
+
+  let rows = []; // {file, name, description, status, assetId, url, error}
+
+  /* ---------- Opsi A: auto-split 1 file gabungan (.rbxmx) ---------- */
+
+  dropSplit.addEventListener('click', () => fileSplit.click());
+  ['dragenter','dragover'].forEach(ev => dropSplit.addEventListener(ev, e => { e.preventDefault(); dropSplit.classList.add('drag'); }));
+  ['dragleave','drop'].forEach(ev => dropSplit.addEventListener(ev, e => { e.preventDefault(); dropSplit.classList.remove('drag'); }));
+  dropSplit.addEventListener('drop', e => { const f = e.dataTransfer.files[0]; if (f) handleSplitFile(f); });
+  fileSplit.addEventListener('change', e => { const f = e.target.files[0]; if (f) handleSplitFile(f); });
+
+  async function handleSplitFile(file){
+    splitStatus.innerHTML = `<p class="empty">Membaca &amp; memecah "${escapeHtml(file.name)}"...</p>`;
+    try{
+      const { results, mode } = await splitCombinedFile(file);
+      results.forEach(r => {
+        rows.push({ file: r.file, name: (namePrefix.value || '') + r.name, description: '', status: 'pending', assetId: null, url: null, error: null });
+      });
+      renderBatch();
+      const modeLabel = mode === 'keyframe' ? 'berdasarkan KeyframeSequence' : 'berdasarkan item top-level (fallback)';
+      splitStatus.innerHTML = `<div class="notice" style="background:var(--good-dim); color:#c9f5df; border-color:#1d6b47;">
+        Berhasil dipecah jadi <b>${results.length}</b> animasi (${modeLabel}). Sudah masuk ke tabel di Opsi B — cek nama &amp; klik "Upload Semua".
+      </div>`;
+    }catch(err){
+      splitStatus.innerHTML = `<div class="notice"><b>Gagal split:</b> ${escapeHtml(err.message || String(err))}</div>`;
+    }
+    fileSplit.value = '';
+  }
+
+  async function splitCombinedFile(file){
+    const ext = file.name.toLowerCase();
+    if (ext.endsWith('.rbxm')){
+      throw new Error('File .rbxm (biner) tidak bisa di-split otomatis. Buka di Roblox Studio → File → Save As → pilih format .rbxmx, lalu upload hasilnya di sini.');
+    }
+    const text = await file.text();
+    const head = text.trimStart().slice(0, 30);
+    if (!(head.startsWith('<?xml') || head.startsWith('<roblox'))){
+      throw new Error('Isi file bukan XML rbxmx yang valid.');
+    }
+    const doc = new DOMParser().parseFromString(text, 'application/xml');
+    if (doc.querySelector('parsererror')) throw new Error('XML tidak valid / rusak.');
+
+    const root = doc.documentElement;
+    const sharedStringsEl = Array.from(root.children).find(el => el.tagName === 'SharedStrings');
+    const allKeyframeSeqs = Array.from(root.getElementsByTagName('Item')).filter(it => it.getAttribute('class') === 'KeyframeSequence');
+
+    let targets, mode;
+    if (allKeyframeSeqs.length){
+      targets = allKeyframeSeqs;
+      mode = 'keyframe';
+    } else {
+      targets = Array.from(root.children).filter(el => el.tagName === 'Item');
+      mode = 'toplevel';
+    }
+    if (!targets.length) throw new Error('Tidak ada instance (KeyframeSequence atau Item) yang bisa dipecah di file ini.');
+
+    const rootAttrs = Array.from(root.attributes).map(a => `${a.name}="${escapeHtml(a.value)}"`).join(' ');
+    const serializer = new XMLSerializer();
+    const sharedStringsXml = sharedStringsEl ? serializer.serializeToString(sharedStringsEl) : '';
+
+    const results = targets.map((node, idx) => {
+      const propsEl = node.querySelector(':scope > Properties');
+      const nameEl = propsEl ? Array.from(propsEl.children).find(p => p.getAttribute('name') === 'Name') : null;
+      let animName = (nameEl ? nameEl.textContent.trim() : '') || `Animation_${idx + 1}`;
+      const itemXml = serializer.serializeToString(node);
+      const xmlOut = `<?xml version="1.0" encoding="utf-8"?>\n<roblox ${rootAttrs}>\n${itemXml}\n${sharedStringsXml}\n</roblox>`;
+      const blob = new Blob([xmlOut], { type: 'text/xml' });
+      const safeFileName = animName.replace(/[^a-zA-Z0-9_\-]+/g, '_').slice(0, 60) || `Animation_${idx + 1}`;
+      const newFile = new File([blob], `${safeFileName}.rbxmx`, { type: 'text/xml' });
+      return { file: newFile, name: animName };
+    });
+
+    return { results, mode };
+  }
+
+  fetch('/api/config').then(r => r.json()).then(cfg => {
+    if (cfg.defaultCreatorType) creatorType.value = cfg.defaultCreatorType;
+    if (cfg.defaultCreatorId) creatorId.value = cfg.defaultCreatorId;
+    configNote.textContent = cfg.hasApiKey
+      ? 'API key terdeteksi di server.'
+      : 'PERINGATAN: ROBLOX_API_KEY belum di-set di environment server — upload akan gagal sampai itu diisi.';
+  }).catch(() => {
+    configNote.textContent = 'Tidak bisa mengambil konfigurasi server.';
+  });
+
+  dropBulk.addEventListener('click', () => fileBulk.click());
+  ['dragenter','dragover'].forEach(ev => dropBulk.addEventListener(ev, e => { e.preventDefault(); dropBulk.classList.add('drag'); }));
+  ['dragleave','drop'].forEach(ev => dropBulk.addEventListener(ev, e => { e.preventDefault(); dropBulk.classList.remove('drag'); }));
+  dropBulk.addEventListener('drop', e => { addFiles(Array.from(e.dataTransfer.files)); });
+  fileBulk.addEventListener('change', e => { addFiles(Array.from(e.target.files)); });
+
+  function addFiles(files){
+    const valid = files.filter(f => /\.(rbxm|rbxmx)$/i.test(f.name));
+    valid.forEach(f => {
+      const base = f.name.replace(/\.(rbxm|rbxmx)$/i, '');
+      rows.push({ file: f, name: (namePrefix.value || '') + base, description: '', status: 'pending', assetId: null, url: null, error: null });
+    });
+    renderBatch();
+  }
+
+  function renderBatch(){
+    if (!rows.length){ batchArea.style.display = 'none'; return; }
+    batchArea.style.display = '';
+    batchBody.innerHTML = rows.map((r, i) => `
+      <tr data-i="${i}">
+        <td class="filename">${escapeHtml(r.file.name)}<br><span class="empty">${formatBytes(r.file.size)}</span></td>
+        <td><input type="text" value="${escapeHtml(r.name)}" data-field="name" ${r.status==='success' ? 'disabled' : ''}></td>
+        <td><input type="text" value="${escapeHtml(r.description)}" data-field="description" placeholder="opsional" ${r.status==='success' ? 'disabled' : ''}></td>
+        <td>${statusPill(r)}</td>
+        <td>${rowAction(r, i)}</td>
+      </tr>
+    `).join('');
+    updateSummary();
+
+    batchBody.querySelectorAll('input[data-field]').forEach(inp => {
+      inp.addEventListener('input', (e) => {
+        const tr = e.target.closest('tr');
+        const i = Number(tr.dataset.i);
+        rows[i][e.target.dataset.field] = e.target.value;
+      });
+    });
+    batchBody.querySelectorAll('[data-retry]').forEach(btn => {
+      btn.addEventListener('click', (e) => uploadOne(Number(e.target.dataset.retry)));
+    });
+    batchBody.querySelectorAll('[data-remove]').forEach(btn => {
+      btn.addEventListener('click', (e) => { rows.splice(Number(e.target.dataset.remove), 1); renderBatch(); });
+    });
+  }
+
+  function statusPill(r){
+    if (r.status === 'pending') return `<span class="status-pill">menunggu</span>`;
+    if (r.status === 'uploading') return `<span class="status-pill uploading">mengupload…</span>`;
+    if (r.status === 'success') return `<span class="status-pill success">✓ ${escapeHtml(r.moderationState||'ok')}</span><br><a class="link" href="${r.url}" target="_blank">lihat asset</a>`;
+    if (r.status === 'error') return `<span class="status-pill error">gagal</span><br><span class="empty">${escapeHtml(r.error||'')}</span>`;
+  }
+  function rowAction(r, i){
+    if (r.status === 'error') return `<button class="small" data-retry="${i}">Retry</button>`;
+    if (r.status === 'success') return '';
+    return `<button class="small" data-remove="${i}">Hapus</button>`;
+  }
+  function updateSummary(){
+    const done = rows.filter(r => r.status === 'success').length;
+    const failed = rows.filter(r => r.status === 'error').length;
+    batchSummary.textContent = `${rows.length} file — ${done} sukses, ${failed} gagal`;
+  }
+
+  clearBatchBtn.addEventListener('click', () => { rows = []; renderBatch(); });
+
+  uploadAllBtn.addEventListener('click', async () => {
+    uploadAllBtn.disabled = true;
+    for (let i = 0; i < rows.length; i++){
+      if (rows[i].status === 'success') continue;
+      await uploadOne(i);
+      await new Promise(r => setTimeout(r, 1200)); // jeda kecil antar request
+    }
+    uploadAllBtn.disabled = false;
+    renderFinalSummary();
+  });
+
+  function renderFinalSummary(){
+    if (!rows.length || rows.some(r => r.status === 'uploading' || r.status === 'pending')){
+      finalSummaryCard.style.display = 'none';
+      return;
+    }
+    finalSummaryCard.style.display = '';
+    finalSummaryBody.innerHTML = rows.map(r => `
+      <tr>
+        <td>${escapeHtml(r.name)}<br><span class="empty">${escapeHtml(r.file.name)}</span></td>
+        <td class="filename">${r.assetId ? escapeHtml(String(r.assetId)) : '—'}</td>
+        <td>${r.status === 'success' ? `<span class="status-pill success">✓ ${escapeHtml(r.moderationState||'ok')}</span>` : `<span class="status-pill error">gagal: ${escapeHtml(r.error||'')}</span>`}</td>
+        <td>${r.url ? `<a class="link" href="${r.url}" target="_blank">buka</a>` : '—'}</td>
+      </tr>
+    `).join('');
+  }
+
+  downloadCsvBtn.addEventListener('click', () => {
+    const header = 'name,filename,assetId,status,moderationState,url,error\n';
+    const lines = rows.map(r => [
+      r.name, r.file.name, r.assetId || '', r.status, r.moderationState || '', r.url || '', (r.error||'').replace(/,/g,';')
+    ].map(v => `"${String(v).replace(/"/g,'""')}"`).join(',')).join('\n');
+    const blob = new Blob([header + lines], { type: 'text/csv' });
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = 'hasil-upload-animasi.csv';
+    a.click();
+  });
+
+  copySummaryBtn.addEventListener('click', async () => {
+    const text = rows.map(r => `${r.name}\t${r.assetId || '(gagal: ' + (r.error||'') + ')'}`).join('\n');
+    try{
+      await navigator.clipboard.writeText(text);
+      copySummaryBtn.textContent = 'Tersalin!';
+      setTimeout(() => copySummaryBtn.textContent = 'Copy sebagai teks', 1500);
+    }catch(e){ alert('Gagal copy ke clipboard.'); }
+  });
+
+  async function uploadOne(i){
+    const r = rows[i];
+    if (!creatorId.value){ alert('Isi Creator ID dulu.'); return; }
+    r.status = 'uploading'; renderBatch();
+
+    const fd = new FormData();
+    fd.append('file', r.file);
+    fd.append('displayName', r.name);
+    fd.append('description', r.description);
+    fd.append('creatorType', creatorType.value);
+    fd.append('creatorId', creatorId.value);
+
+    try{
+      const res = await fetch('/api/upload', { method: 'POST', body: fd });
+      const json = await res.json();
+      if (json.ok){
+        r.status = 'success'; r.assetId = json.assetId; r.url = json.url; r.moderationState = json.moderationState;
+      } else {
+        r.status = 'error'; r.error = json.error || 'Gagal upload.';
+      }
+    } catch(e){
+      r.status = 'error'; r.error = e.message;
+    }
+    renderBatch();
+  }
+})();
+</script>
+</body>
+</html>
