@@ -129,25 +129,48 @@
     </div>
 
     <div class="card" style="margin-top:14px;">
-      <h2>Pengaturan Default</h2>
+      <h2>Pengaturan Akun Roblox</h2>
       <div class="field-row">
-        <div class="field">
-          <label>Creator type</label>
-          <select id="creatorType">
-            <option value="user">User (akun pribadi)</option>
-            <option value="group">Group</option>
-          </select>
+        <div class="field" style="flex:1; min-width:260px;">
+          <label>API Key</label>
+          <input id="apiKeyInput" type="password" placeholder="Isi untuk set/ganti API key">
         </div>
         <div class="field">
-          <label>Creator ID (userId / groupId)</label>
-          <input id="creatorId" placeholder="mis. 123456789">
+          <label>User ID (akun pribadi)</label>
+          <input id="userIdInput" placeholder="mis. 123456789">
+        </div>
+        <div class="field" style="justify-content:flex-end;">
+          <label>&nbsp;</label>
+          <button class="btn" id="saveSettingsBtn">Simpan</button>
+        </div>
+      </div>
+      <div id="settingsNote" class="empty"></div>
+    </div>
+
+    <div class="card" style="margin-top:14px;">
+      <h2>Upload Sebagai</h2>
+      <div class="field-row" style="align-items:flex-start;">
+        <div class="field">
+          <label>Target</label>
+          <select id="uploadTarget">
+            <option value="personal">Akun Pribadi</option>
+            <option value="group">Grup Komunitas</option>
+          </select>
+        </div>
+        <div class="field" id="groupPickerWrap" style="display:none; min-width:280px;">
+          <label>Pilih Grup (role: Admin / Developer / Owner)</label>
+          <select id="groupPicker"></select>
+        </div>
+        <div class="field" style="justify-content:flex-end;">
+          <label>&nbsp;</label>
+          <button class="small" id="refreshGroupsBtn">Refresh daftar grup</button>
         </div>
         <div class="field">
           <label>Prefix nama (opsional)</label>
           <input id="namePrefix" placeholder="mis. Emote_">
         </div>
       </div>
-      <div id="configNote" class="empty"></div>
+      <div id="groupsNote" class="empty"></div>
     </div>
 
     <div class="card" style="margin-top:14px;">
@@ -498,10 +521,18 @@ function kv(k, v){ return `<div class="kv"><span>${k}</span><span>${v}</span></d
   const batchSummary = document.getElementById('batchSummary');
   const uploadAllBtn = document.getElementById('uploadAllBtn');
   const clearBatchBtn = document.getElementById('clearBatchBtn');
-  const creatorType = document.getElementById('creatorType');
-  const creatorId = document.getElementById('creatorId');
   const namePrefix = document.getElementById('namePrefix');
-  const configNote = document.getElementById('configNote');
+
+  const apiKeyInput = document.getElementById('apiKeyInput');
+  const userIdInput = document.getElementById('userIdInput');
+  const saveSettingsBtn = document.getElementById('saveSettingsBtn');
+  const settingsNote = document.getElementById('settingsNote');
+
+  const uploadTarget = document.getElementById('uploadTarget');
+  const groupPickerWrap = document.getElementById('groupPickerWrap');
+  const groupPicker = document.getElementById('groupPicker');
+  const refreshGroupsBtn = document.getElementById('refreshGroupsBtn');
+  const groupsNote = document.getElementById('groupsNote');
 
   const dropSplit = document.getElementById('dropSplit');
   const fileSplit = document.getElementById('fileSplit');
@@ -513,6 +544,88 @@ function kv(k, v){ return `<div class="kv"><span>${k}</span><span>${v}</span></d
   const copySummaryBtn = document.getElementById('copySummaryBtn');
 
   let rows = []; // {file, name, description, status, assetId, url, error}
+
+  /* ---------- Pengaturan: API key + User ID (disimpan di server) ---------- */
+
+  async function loadSettingsFromServer(){
+    try{
+      const r = await fetch('/api/settings');
+      const j = await r.json();
+      if (j.apiKeyMasked) apiKeyInput.placeholder = `Tersimpan: ${j.apiKeyMasked} — isi untuk mengganti`;
+      if (j.userId) userIdInput.value = j.userId;
+      settingsNote.textContent = j.hasApiKey
+        ? 'API key tersimpan di server.'
+        : 'Belum ada API key tersimpan — isi lalu klik Simpan.';
+      return j;
+    }catch(e){
+      settingsNote.textContent = 'Gagal memuat pengaturan dari server.';
+      return null;
+    }
+  }
+
+  saveSettingsBtn.addEventListener('click', async () => {
+    saveSettingsBtn.disabled = true;
+    try{
+      const body = { userId: userIdInput.value.trim() };
+      if (apiKeyInput.value.trim()) body.apiKey = apiKeyInput.value.trim();
+      const r = await fetch('/api/settings', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      });
+      const j = await r.json();
+      if (j.ok){
+        apiKeyInput.value = '';
+        if (j.apiKeyMasked) apiKeyInput.placeholder = `Tersimpan: ${j.apiKeyMasked} — isi untuk mengganti`;
+        settingsNote.textContent = 'Tersimpan.';
+        loadGroups();
+      } else {
+        settingsNote.textContent = 'Gagal menyimpan: ' + (j.error || 'unknown error');
+      }
+    }catch(e){
+      settingsNote.textContent = 'Gagal menyimpan: ' + e.message;
+    }
+    saveSettingsBtn.disabled = false;
+  });
+
+  /* ---------- Upload target: Personal vs Grup (role Admin/Developer/Owner) ---------- */
+
+  uploadTarget.addEventListener('change', () => {
+    groupPickerWrap.style.display = uploadTarget.value === 'group' ? '' : 'none';
+    if (uploadTarget.value === 'group' && !groupPicker.options.length) loadGroups();
+  });
+
+  refreshGroupsBtn.addEventListener('click', loadGroups);
+
+  async function loadGroups(){
+    const userId = userIdInput.value.trim();
+    if (!userId){ groupsNote.textContent = 'Isi &amp; simpan User ID dulu untuk memuat daftar grup.'; return; }
+    groupsNote.textContent = 'Memuat daftar grup...';
+    try{
+      const r = await fetch(`/api/groups?userId=${encodeURIComponent(userId)}`);
+      const j = await r.json();
+      if (!j.ok){ groupsNote.textContent = 'Gagal memuat grup: ' + (j.error || ''); return; }
+      groupPicker.innerHTML = j.qualifying.map(g =>
+        `<option value="${g.groupId}">${escapeHtml(g.groupName)} — ${escapeHtml(g.roleName)}</option>`
+      ).join('');
+      groupsNote.textContent = j.qualifying.length
+        ? `${j.qualifying.length} grup ditemukan dengan role Admin/Developer/Owner.`
+        : 'Tidak ada grup dengan role Admin/Developer/Owner untuk User ID ini.';
+    }catch(e){
+      groupsNote.textContent = 'Gagal memuat grup: ' + e.message;
+    }
+  }
+
+  function getUploadCreator(){
+    if (uploadTarget.value === 'group'){
+      if (!groupPicker.value) return null;
+      return { creatorType: 'group', creatorId: groupPicker.value };
+    }
+    if (!userIdInput.value.trim()) return null;
+    return { creatorType: 'user', creatorId: userIdInput.value.trim() };
+  }
+
+  loadSettingsFromServer().then(() => { if (userIdInput.value.trim()) loadGroups(); });
 
   /* ---------- Opsi A: auto-split 1 file gabungan (.rbxmx) ---------- */
 
@@ -585,16 +698,6 @@ function kv(k, v){ return `<div class="kv"><span>${k}</span><span>${v}</span></d
 
     return { results, mode };
   }
-
-  fetch('/api/config').then(r => r.json()).then(cfg => {
-    if (cfg.defaultCreatorType) creatorType.value = cfg.defaultCreatorType;
-    if (cfg.defaultCreatorId) creatorId.value = cfg.defaultCreatorId;
-    configNote.textContent = cfg.hasApiKey
-      ? 'API key terdeteksi di server.'
-      : 'PERINGATAN: ROBLOX_API_KEY belum di-set di environment server — upload akan gagal sampai itu diisi.';
-  }).catch(() => {
-    configNote.textContent = 'Tidak bisa mengambil konfigurasi server.';
-  });
 
   dropBulk.addEventListener('click', () => fileBulk.click());
   ['dragenter','dragover'].forEach(ev => dropBulk.addEventListener(ev, e => { e.preventDefault(); dropBulk.classList.add('drag'); }));
@@ -709,15 +812,19 @@ function kv(k, v){ return `<div class="kv"><span>${k}</span><span>${v}</span></d
 
   async function uploadOne(i){
     const r = rows[i];
-    if (!creatorId.value){ alert('Isi Creator ID dulu.'); return; }
+    const target = getUploadCreator();
+    if (!target){
+      alert(uploadTarget.value === 'group' ? 'Pilih grup dulu (atau klik Refresh daftar grup).' : 'Isi &amp; simpan User ID dulu di bagian Pengaturan.');
+      return;
+    }
     r.status = 'uploading'; renderBatch();
 
     const fd = new FormData();
     fd.append('file', r.file);
     fd.append('displayName', r.name);
     fd.append('description', r.description);
-    fd.append('creatorType', creatorType.value);
-    fd.append('creatorId', creatorId.value);
+    fd.append('creatorType', target.creatorType);
+    fd.append('creatorId', target.creatorId);
 
     try{
       const res = await fetch('/api/upload', { method: 'POST', body: fd });
