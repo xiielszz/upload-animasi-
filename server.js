@@ -1,31 +1,117 @@
 const express = require('express');
 const multer = require('multer');
 const path = require('path');
+const fs = require('fs');
 
 const app = express();
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 20 * 1024 * 1024 } });
 
 const PORT = process.env.PORT || 3000;
-const ROBLOX_API_KEY = process.env.ROBLOX_API_KEY || '';
-const DEFAULT_CREATOR_TYPE = (process.env.ROBLOX_CREATOR_TYPE || 'user').toLowerCase(); // 'user' | 'group'
-const DEFAULT_CREATOR_ID = process.env.ROBLOX_CREATOR_ID || '';
+
+// Kalau deploy di Railway dan mau setting-nya tetap ada setelah redeploy,
+// attach sebuah Volume dan set env DATA_DIR ke mount path volume itu (mis. /data).
+const DATA_DIR = process.env.DATA_DIR || path.join(__dirname, 'data');
+const SETTINGS_PATH = path.join(DATA_DIR, 'settings.json');
+
+function loadSettings() {
+  try {
+    const raw = fs.readFileSync(SETTINGS_PATH, 'utf-8');
+    return JSON.parse(raw);
+  } catch (e) {
+    return {};
+  }
+}
+function saveSettings(patch) {
+  const current = loadSettings();
+  const next = { ...current, ...patch };
+  fs.mkdirSync(DATA_DIR, { recursive: true });
+  fs.writeFileSync(SETTINGS_PATH, JSON.stringify(next, null, 2), 'utf-8');
+  return next;
+}
+function maskKey(key) {
+  if (!key) return null;
+  if (key.length <= 8) return '••••';
+  return key.slice(0, 4) + '••••' + key.slice(-4);
+}
+function currentApiKey() {
+  const s = loadSettings();
+  return s.apiKey || process.env.ROBLOX_API_KEY || '';
+}
+function currentUserId() {
+  const s = loadSettings();
+  return s.userId || process.env.ROBLOX_CREATOR_ID || '';
+}
 
 app.use(express.static(path.join(__dirname, 'public')));
 app.use(express.json());
 
-// Non-secret defaults so the frontend can prefill the creator fields.
-app.get('/api/config', (req, res) => {
+// Role names we consider "cukup" untuk upload atas nama grup.
+const QUALIFYING_ROLE_PATTERN = /owner|admin|developer/i;
+
+app.get('/api/settings', (req, res) => {
+  const apiKey = currentApiKey();
+  const userId = currentUserId();
   res.json({
-    hasApiKey: Boolean(ROBLOX_API_KEY),
-    defaultCreatorType: DEFAULT_CREATOR_TYPE,
-    defaultCreatorId: DEFAULT_CREATOR_ID,
+    hasApiKey: Boolean(apiKey),
+    apiKeyMasked: maskKey(apiKey),
+    userId,
   });
+});
+
+app.post('/api/settings', (req, res) => {
+  try {
+    const patch = {};
+    if (typeof req.body.apiKey === 'string' && req.body.apiKey.trim()) {
+      patch.apiKey = req.body.apiKey.trim();
+    }
+    if (typeof req.body.userId === 'string') {
+      patch.userId = req.body.userId.trim();
+    }
+    const saved = saveSettings(patch);
+    res.json({
+      ok: true,
+      hasApiKey: Boolean(saved.apiKey || process.env.ROBLOX_API_KEY),
+      apiKeyMasked: maskKey(saved.apiKey || process.env.ROBLOX_API_KEY),
+      userId: saved.userId || '',
+    });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ ok: false, error: 'Gagal menyimpan pengaturan: ' + err.message });
+  }
+});
+
+// Ambil daftar grup tempat userId ini punya role, difilter yang levelnya
+// minimal Admin / Developer / Owner (dicocokkan dari nama role di grup itu).
+app.get('/api/groups', async (req, res) => {
+  const userId = req.query.userId || currentUserId();
+  if (!userId) {
+    return res.status(400).json({ ok: false, error: 'userId belum diisi.' });
+  }
+  try {
+    const r = await fetch(`https://groups.roblox.com/v2/users/${encodeURIComponent(userId)}/groups/roles`);
+    const j = await r.json().catch(() => null);
+    if (!r.ok) {
+      return res.status(r.status).json({ ok: false, error: j?.errors?.[0]?.message || 'Gagal mengambil daftar grup dari Roblox.' });
+    }
+    const all = (j.data || []).map((entry) => ({
+      groupId: entry.group.id,
+      groupName: entry.group.name,
+      roleName: entry.role.name,
+      rank: entry.role.rank,
+    }));
+    const qualifying = all.filter((g) => QUALIFYING_ROLE_PATTERN.test(g.roleName));
+    res.json({ ok: true, all, qualifying });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ ok: false, error: 'Gagal menghubungi Roblox: ' + err.message });
+  }
 });
 
 app.post('/api/upload', upload.single('file'), async (req, res) => {
   try {
-    if (!ROBLOX_API_KEY) {
-      return res.status(500).json({ ok: false, error: 'ROBLOX_API_KEY belum di-set di server (env variable).' });
+    const apiKey = currentApiKey();
+    if (!apiKey) {
+      return res.status(500).json({ ok: false, error: 'API key belum diisi. Buka bagian Pengaturan dan simpan API key dulu.' });
     }
     if (!req.file) {
       return res.status(400).json({ ok: false, error: 'Tidak ada file yang dikirim.' });
@@ -38,11 +124,11 @@ app.post('/api/upload', upload.single('file'), async (req, res) => {
 
     const displayName = (req.body.displayName || path.basename(req.file.originalname, ext)).slice(0, 50);
     const description = (req.body.description || '').slice(0, 1000);
-    const creatorType = (req.body.creatorType || DEFAULT_CREATOR_TYPE) === 'group' ? 'group' : 'user';
-    const creatorId = req.body.creatorId || DEFAULT_CREATOR_ID;
+    const creatorType = req.body.creatorType === 'group' ? 'group' : 'user';
+    const creatorId = req.body.creatorId || (creatorType === 'user' ? currentUserId() : '');
 
     if (!creatorId) {
-      return res.status(400).json({ ok: false, error: 'creatorId (userId/groupId) belum diisi.' });
+      return res.status(400).json({ ok: false, error: 'Target upload (userId/groupId) belum dipilih.' });
     }
 
     const creator = creatorType === 'group' ? { groupId: String(creatorId) } : { userId: String(creatorId) };
@@ -60,7 +146,7 @@ app.post('/api/upload', upload.single('file'), async (req, res) => {
 
     const createRes = await fetch('https://apis.roblox.com/assets/v1/assets', {
       method: 'POST',
-      headers: { 'x-api-key': ROBLOX_API_KEY },
+      headers: { 'x-api-key': apiKey },
       body: form,
     });
     const createJson = await createRes.json().catch(() => null);
@@ -70,7 +156,7 @@ app.post('/api/upload', upload.single('file'), async (req, res) => {
     }
 
     const operationId = createJson.path.split('/').pop();
-    const result = await pollOperation(operationId);
+    const result = await pollOperation(apiKey, operationId);
     return res.json(result);
   } catch (err) {
     console.error(err);
@@ -81,17 +167,17 @@ app.post('/api/upload', upload.single('file'), async (req, res) => {
 // Manual status check (useful if a poll timed out and the user wants to re-check later)
 app.get('/api/status/:operationId', async (req, res) => {
   try {
-    const result = await pollOperation(req.params.operationId, 1);
+    const result = await pollOperation(currentApiKey(), req.params.operationId, 1);
     return res.json(result);
   } catch (err) {
     return res.status(500).json({ ok: false, error: err.message });
   }
 });
 
-async function pollOperation(operationId, maxTries = 25) {
+async function pollOperation(apiKey, operationId, maxTries = 25) {
   for (let i = 0; i < maxTries; i++) {
     const r = await fetch(`https://apis.roblox.com/assets/v1/operations/${operationId}`, {
-      headers: { 'x-api-key': ROBLOX_API_KEY },
+      headers: { 'x-api-key': apiKey },
     });
     const j = await r.json().catch(() => null);
 
