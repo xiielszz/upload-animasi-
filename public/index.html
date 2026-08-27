@@ -95,6 +95,7 @@
 
   .signature{margin-top:26px; padding-top:16px; border-top:1px solid var(--line); font-family:var(--mono); font-size:11px; color:var(--dim); text-align:center;}
 </style>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
 </head>
 <body>
 <div class="wrap">
@@ -121,11 +122,12 @@
   <div class="tab-panel" id="panel-bulk">
     <div class="notice info">
       <b>Penting:</b> 1 file yang diupload ke Roblox = 1 asset Animation. Kalau kamu punya 1 file gabungan
-      berisi banyak animasi, upload langsung file itu cuma jadi <i>satu</i> asset saja. Karena itu di bawah
-      ada <b>Opsi A</b> untuk otomatis memecah 1 file <code>.rbxmx</code> jadi banyak file per-animasi
-      (dideteksi dari tiap instance <code>KeyframeSequence</code>) sebelum diupload satu-satu. Kalau filemu
-      masih <code>.rbxm</code> biner, split otomatis tidak bisa (formatnya proprietary) — save as
-      <code>.rbxmx</code> dulu di Studio, baru pakai Opsi A.
+      berisi banyak animasi, upload langsung file itu cuma jadi <i>satu</i> asset saja. Ada 3 cara di bawah:
+      <b>Opsi A</b> pecah otomatis dari 1 file <code>.rbxmx</code> gabungan (dideteksi dari tiap
+      <code>KeyframeSequence</code>), <b>Opsi B</b> upload file yang sudah terpisah satu-satu, atau
+      <b>Opsi C</b> upload 1 file <code>.zip</code> berisi banyak file animasi sekaligus. File
+      <code>.rbxm</code> biner tidak bisa di-split otomatis (formatnya proprietary) — save as
+      <code>.rbxmx</code> dulu di Studio kalau butuh itu.
     </div>
 
     <div class="card" style="margin-top:14px;">
@@ -182,6 +184,17 @@
         <input type="file" id="fileSplit" accept=".rbxmx,.rbxm">
       </div>
       <div id="splitStatus"></div>
+    </div>
+
+    <div class="card" style="margin-top:14px;">
+      <h2>Opsi C — Upload dari File ZIP</h2>
+      <p class="empty" style="margin:0 0 10px;">Punya folder animasi (masing-masing sudah file <code>.rbxm</code>/<code>.rbxmx</code> terpisah) yang di-compress jadi 1 ZIP? Upload ZIP-nya di sini — tool otomatis membuka isinya di browser dan menambahkan tiap file animasi ke tabel di bawah. Kalau ada file <code>.rbxmx</code> di dalam ZIP yang ternyata masih gabungan beberapa animasi, otomatis dipecah lagi juga.</p>
+      <div class="drop" id="dropZip">
+        <b>Klik untuk pilih file ZIP</b>, atau drag &amp; drop di sini<br>
+        <span class="hint">.zip — isinya boleh campur .rbxm dan .rbxmx, boleh di dalam folder/subfolder</span>
+        <input type="file" id="fileZip" accept=".zip">
+      </div>
+      <div id="zipStatus"></div>
     </div>
 
     <div class="card" style="margin-top:14px;">
@@ -659,6 +672,10 @@ function kv(k, v){ return `<div class="kv"><span>${k}</span><span>${v}</span></d
       throw new Error('File .rbxm (biner) tidak bisa di-split otomatis. Buka di Roblox Studio → File → Save As → pilih format .rbxmx, lalu upload hasilnya di sini.');
     }
     const text = await file.text();
+    return splitXmlText(text);
+  }
+
+  function splitXmlText(text){
     const head = text.trimStart().slice(0, 30);
     if (!(head.startsWith('<?xml') || head.startsWith('<roblox'))){
       throw new Error('Isi file bukan XML rbxmx yang valid.');
@@ -697,6 +714,72 @@ function kv(k, v){ return `<div class="kv"><span>${k}</span><span>${v}</span></d
     });
 
     return { results, mode };
+  }
+
+  /* ---------- Opsi C: upload dari 1 file ZIP berisi banyak animasi ---------- */
+
+  const dropZip = document.getElementById('dropZip');
+  const fileZip = document.getElementById('fileZip');
+  const zipStatus = document.getElementById('zipStatus');
+
+  dropZip.addEventListener('click', () => fileZip.click());
+  ['dragenter','dragover'].forEach(ev => dropZip.addEventListener(ev, e => { e.preventDefault(); dropZip.classList.add('drag'); }));
+  ['dragleave','drop'].forEach(ev => dropZip.addEventListener(ev, e => { e.preventDefault(); dropZip.classList.remove('drag'); }));
+  dropZip.addEventListener('drop', e => { const f = e.dataTransfer.files[0]; if (f) handleZipFile(f); });
+  fileZip.addEventListener('change', e => { const f = e.target.files[0]; if (f) handleZipFile(f); });
+
+  async function handleZipFile(file){
+    if (typeof JSZip === 'undefined'){
+      zipStatus.innerHTML = `<div class="notice"><b>Gagal:</b> library ZIP tidak berhasil dimuat (cek koneksi internet ke cdnjs.cloudflare.com).</div>`;
+      return;
+    }
+    zipStatus.innerHTML = `<p class="empty">Membuka "${escapeHtml(file.name)}"...</p>`;
+    try{
+      const zip = await JSZip.loadAsync(file);
+      const entries = Object.values(zip.files).filter(e => !e.dir && /\.(rbxm|rbxmx)$/i.test(e.name));
+      if (!entries.length) throw new Error('Tidak ada file .rbxm/.rbxmx di dalam ZIP ini.');
+
+      let added = 0, splitExtra = 0, skipped = 0;
+      for (const entry of entries){
+        const baseName = entry.name.split('/').pop();
+        const isXml = /\.rbxmx$/i.test(baseName);
+        try{
+          if (isXml){
+            const text = await entry.async('string');
+            let splitResult = null;
+            try{ splitResult = splitXmlText(text); }catch(e){ splitResult = null; }
+            if (splitResult && splitResult.results.length > 1){
+              splitResult.results.forEach(r => {
+                rows.push({ file: r.file, name: (namePrefix.value || '') + r.name, description: '', status: 'pending', assetId: null, url: null, error: null });
+              });
+              added += splitResult.results.length;
+              splitExtra += splitResult.results.length - 1;
+              continue;
+            }
+            const blob = new Blob([text], { type: 'text/xml' });
+            const f = new File([blob], baseName, { type: 'text/xml' });
+            const nm = baseName.replace(/\.(rbxm|rbxmx)$/i, '');
+            rows.push({ file: f, name: (namePrefix.value || '') + nm, description: '', status: 'pending', assetId: null, url: null, error: null });
+            added++;
+          } else {
+            const arrBuf = await entry.async('arraybuffer');
+            const f = new File([arrBuf], baseName, { type: 'model/x-rbxm' });
+            const nm = baseName.replace(/\.(rbxm|rbxmx)$/i, '');
+            rows.push({ file: f, name: (namePrefix.value || '') + nm, description: '', status: 'pending', assetId: null, url: null, error: null });
+            added++;
+          }
+        }catch(e){
+          skipped++;
+        }
+      }
+      renderBatch();
+      zipStatus.innerHTML = `<div class="notice" style="background:var(--good-dim); color:#c9f5df; border-color:#1d6b47;">
+        ${added} animasi ditambahkan dari ZIP${splitExtra ? ` (termasuk ${splitExtra} hasil pemecahan otomatis dari file gabungan di dalam ZIP)` : ''}${skipped ? `, ${skipped} file gagal dibaca` : ''}. Cek nama di tabel Opsi B lalu klik "Upload Semua".
+      </div>`;
+    }catch(err){
+      zipStatus.innerHTML = `<div class="notice"><b>Gagal buka ZIP:</b> ${escapeHtml(err.message || String(err))}</div>`;
+    }
+    fileZip.value = '';
   }
 
   dropBulk.addEventListener('click', () => fileBulk.click());
