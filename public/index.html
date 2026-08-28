@@ -440,21 +440,7 @@ function maskKeyClient(key){
       : 'Belum ada API key tersimpan di browser ini — isi lalu klik Simpan.';
   }
 
-  saveSettingsBtn.addEventListener('click', () => {
-    if (apiKeyInput.value.trim()) setApiKey(apiKeyInput.value.trim());
-    setSavedUserId(userIdInput.value.trim());
-    apiKeyInput.value = '';
-    refreshSettingsNote();
-    loadGroups();
-  });
-
-  uploadTarget.addEventListener('change', () => {
-    groupPickerWrap.style.display = uploadTarget.value === 'group' ? '' : 'none';
-    if (uploadTarget.value === 'group' && !groupPicker.options.length) loadGroups();
-  });
-  refreshGroupsBtn.addEventListener('click', loadGroups);
-
-  window.loadGroups = async function loadGroups(){
+  async function loadGroups(){
     const userId = userIdInput.value.trim();
     if (!userId){ groupsNote.textContent = 'Isi & simpan User ID dulu untuk memuat daftar grup.'; return; }
     groupsNote.textContent = 'Memuat daftar grup...';
@@ -471,16 +457,32 @@ function maskKeyClient(key){
     }catch(e){
       groupsNote.textContent = 'Gagal memuat grup: ' + e.message;
     }
-  };
+  }
+  window.loadGroups = loadGroups;
 
-  window.getUploadCreator = function getUploadCreator(){
+  function getUploadCreator(){
     if (uploadTarget.value === 'group'){
       if (!groupPicker.value) return null;
       return { creatorType: 'group', creatorId: groupPicker.value };
     }
     if (!userIdInput.value.trim()) return null;
     return { creatorType: 'user', creatorId: userIdInput.value.trim() };
-  };
+  }
+  window.getUploadCreator = getUploadCreator;
+
+  saveSettingsBtn.addEventListener('click', () => {
+    if (apiKeyInput.value.trim()) setApiKey(apiKeyInput.value.trim());
+    setSavedUserId(userIdInput.value.trim());
+    apiKeyInput.value = '';
+    refreshSettingsNote();
+    loadGroups();
+  });
+
+  uploadTarget.addEventListener('change', () => {
+    groupPickerWrap.style.display = uploadTarget.value === 'group' ? '' : 'none';
+    if (uploadTarget.value === 'group' && !groupPicker.options.length) loadGroups();
+  });
+  refreshGroupsBtn.addEventListener('click', loadGroups);
 
   refreshSettingsNote();
   if (userIdInput.value.trim()) loadGroups();
