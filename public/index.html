@@ -107,6 +107,7 @@
     <button class="tab-btn active" data-tab="inspector">Inspector</button>
     <button class="tab-btn" data-tab="bulk">Upload Animasi</button>
     <button class="tab-btn" data-tab="audio">Upload Audio</button>
+    <button class="tab-btn" data-tab="download">Download Audio</button>
   </div>
 
   <!-- ============ SHARED: Settings + Upload Target (dipakai tab Animasi & Audio) ============ -->
@@ -314,6 +315,44 @@
     </div>
   </div>
 
+  <!-- ============ TAB 4: DOWNLOAD AUDIO ============ -->
+  <div class="tab-panel" id="panel-download">
+    <div class="notice info">
+      Download audio Roblox berdasarkan Asset ID lewat Asset Delivery API (endpoint publik, tidak butuh
+      API key — sama seperti jalur yang dipakai client Roblox untuk memutar audio, jadi hanya berhasil
+      untuk asset yang statusnya <b>public/approved</b>).
+    </div>
+
+    <div class="card" style="margin-top:14px;">
+      <h2>Tempel Asset ID atau Tabel Lua</h2>
+      <p class="empty" style="margin:0 0 10px;">Bisa tempel daftar Asset ID satu per baris, atau langsung tempel isi tabel Lua seperti <code>{ "NAMA", 123456789 }</code> (nama otomatis ikut terbaca).</p>
+      <textarea id="downloadInput" rows="8" style="width:100%; background:var(--panel-2); border:1px solid var(--line); color:var(--text); border-radius:8px; padding:10px 12px; font-family:var(--mono); font-size:12.5px; resize:vertical;" placeholder='mis.&#10;{ "STYLISH FLOATING", 124173739995464 },&#10;{ "AFROBEAT", 74227126026309 },&#10;&#10;atau cukup:&#10;124173739995464&#10;74227126026309'></textarea>
+      <div class="toolbar" style="margin-top:10px;">
+        <button class="btn" id="parseDownloadBtn">Parse & Tambah ke Daftar</button>
+        <button class="btn ghost small" id="clearDownloadBtn">Kosongkan daftar</button>
+        <span class="empty" id="downloadSummary" style="align-self:center;"></span>
+      </div>
+    </div>
+
+    <div class="card" id="downloadBatchArea" style="margin-top:14px; display:none;">
+      <h2>Daftar Audio</h2>
+      <div class="toolbar">
+        <button class="btn" id="downloadAllZipBtn">Download Semua sebagai ZIP</button>
+      </div>
+      <table class="batch">
+        <thead>
+          <tr>
+            <th style="width:35%">Nama</th>
+            <th style="width:20%">Asset ID</th>
+            <th style="width:20%">Status</th>
+            <th style="width:25%">Aksi</th>
+          </tr>
+        </thead>
+        <tbody id="downloadBatchBody"></tbody>
+      </table>
+    </div>
+  </div>
+
   <div class="signature">roblox-tools · inspector berjalan client-side, upload lewat server proxy</div>
 </div>
 
@@ -327,7 +366,7 @@ document.querySelectorAll('.tab-btn').forEach(btn => {
     document.querySelectorAll('.tab-panel').forEach(p => p.classList.remove('active'));
     btn.classList.add('active');
     document.getElementById('panel-' + btn.dataset.tab).classList.add('active');
-    document.getElementById('sharedConfig').style.display = btn.dataset.tab === 'inspector' ? 'none' : '';
+    document.getElementById('sharedConfig').style.display = (btn.dataset.tab === 'bulk' || btn.dataset.tab === 'audio') ? '' : 'none';
   });
 });
 
@@ -361,6 +400,91 @@ function downloadTextFile(filename, text, mime){
   a.download = filename;
   a.click();
 }
+
+/* ================================================================ */
+/* CREDENTIALS (shared, disimpan per-browser lewat localStorage —     */
+/* SETIAP pengunjung website ini punya API key/User ID sendiri,       */
+/* tidak lagi 1 file bersama di server, jadi tidak saling bentrok)    */
+/* ================================================================ */
+const LS_KEYS = { apiKey: 'roblox_tools_api_key', userId: 'roblox_tools_user_id' };
+
+function getApiKey(){ return localStorage.getItem(LS_KEYS.apiKey) || ''; }
+function setApiKey(v){ if (v) localStorage.setItem(LS_KEYS.apiKey, v); }
+function getSavedUserId(){ return localStorage.getItem(LS_KEYS.userId) || ''; }
+function setSavedUserId(v){ localStorage.setItem(LS_KEYS.userId, v || ''); }
+function maskKeyClient(key){
+  if (!key) return null;
+  if (key.length <= 8) return '••••';
+  return key.slice(0,4) + '••••' + key.slice(-4);
+}
+
+(function(){
+  const apiKeyInput = document.getElementById('apiKeyInput');
+  const userIdInput = document.getElementById('userIdInput');
+  const saveSettingsBtn = document.getElementById('saveSettingsBtn');
+  const settingsNote = document.getElementById('settingsNote');
+
+  const uploadTarget = document.getElementById('uploadTarget');
+  const groupPickerWrap = document.getElementById('groupPickerWrap');
+  const groupPicker = document.getElementById('groupPicker');
+  const refreshGroupsBtn = document.getElementById('refreshGroupsBtn');
+  const groupsNote = document.getElementById('groupsNote');
+
+  function refreshSettingsNote(){
+    const key = getApiKey();
+    const uid = getSavedUserId();
+    if (uid) userIdInput.value = uid;
+    apiKeyInput.placeholder = key ? `Tersimpan di browser ini: ${maskKeyClient(key)} — isi untuk mengganti` : 'Isi API key kamu';
+    settingsNote.textContent = key
+      ? 'API key tersimpan di browser ini saja (tidak dikirim ke pengunjung lain).'
+      : 'Belum ada API key tersimpan di browser ini — isi lalu klik Simpan.';
+  }
+
+  saveSettingsBtn.addEventListener('click', () => {
+    if (apiKeyInput.value.trim()) setApiKey(apiKeyInput.value.trim());
+    setSavedUserId(userIdInput.value.trim());
+    apiKeyInput.value = '';
+    refreshSettingsNote();
+    loadGroups();
+  });
+
+  uploadTarget.addEventListener('change', () => {
+    groupPickerWrap.style.display = uploadTarget.value === 'group' ? '' : 'none';
+    if (uploadTarget.value === 'group' && !groupPicker.options.length) loadGroups();
+  });
+  refreshGroupsBtn.addEventListener('click', loadGroups);
+
+  window.loadGroups = async function loadGroups(){
+    const userId = userIdInput.value.trim();
+    if (!userId){ groupsNote.textContent = 'Isi & simpan User ID dulu untuk memuat daftar grup.'; return; }
+    groupsNote.textContent = 'Memuat daftar grup...';
+    try{
+      const r = await fetch(`/api/groups?userId=${encodeURIComponent(userId)}`);
+      const j = await r.json();
+      if (!j.ok){ groupsNote.textContent = 'Gagal memuat grup: ' + (j.error || ''); return; }
+      if (!j.all.length){ groupPicker.innerHTML = ''; groupsNote.textContent = 'User ID ini belum tergabung di grup manapun.'; return; }
+      groupPicker.innerHTML = j.all.map(g => {
+        const tag = g.isOwner ? ' ★ Owner' : (g.qualifies ? ' ✓' : '');
+        return `<option value="${g.groupId}">${escapeHtml(g.groupName)} — ${escapeHtml(g.roleName)}${tag}</option>`;
+      }).join('');
+      groupsNote.textContent = `${j.all.length} grup ditemukan (${j.qualifying.length} ditandai ★/✓ sebagai kandidat Admin/Developer/Owner). Grup lain tetap bisa dipilih manual kalau nama role-nya custom.`;
+    }catch(e){
+      groupsNote.textContent = 'Gagal memuat grup: ' + e.message;
+    }
+  };
+
+  window.getUploadCreator = function getUploadCreator(){
+    if (uploadTarget.value === 'group'){
+      if (!groupPicker.value) return null;
+      return { creatorType: 'group', creatorId: groupPicker.value };
+    }
+    if (!userIdInput.value.trim()) return null;
+    return { creatorType: 'user', creatorId: userIdInput.value.trim() };
+  };
+
+  refreshSettingsNote();
+  if (userIdInput.value.trim()) loadGroups();
+})();
 
 /* ================================================================ */
 /* TAB 1: INSPECTOR (client-side parsing, same as standalone viewer)  */
@@ -627,17 +751,6 @@ function downloadTextFile(filename, text, mime){
   const clearBatchBtn = document.getElementById('clearBatchBtn');
   const namePrefix = document.getElementById('namePrefix');
 
-  const apiKeyInput = document.getElementById('apiKeyInput');
-  const userIdInput = document.getElementById('userIdInput');
-  const saveSettingsBtn = document.getElementById('saveSettingsBtn');
-  const settingsNote = document.getElementById('settingsNote');
-
-  const uploadTarget = document.getElementById('uploadTarget');
-  const groupPickerWrap = document.getElementById('groupPickerWrap');
-  const groupPicker = document.getElementById('groupPicker');
-  const refreshGroupsBtn = document.getElementById('refreshGroupsBtn');
-  const groupsNote = document.getElementById('groupsNote');
-
   const dropSplit = document.getElementById('dropSplit');
   const fileSplit = document.getElementById('fileSplit');
   const splitStatus = document.getElementById('splitStatus');
@@ -650,90 +763,6 @@ function downloadTextFile(filename, text, mime){
   const downloadLuaBtn = document.getElementById('downloadLuaBtn');
 
   let rows = []; // {file, name, description, status, assetId, url, error}
-
-  /* ---------- Pengaturan: API key + User ID (disimpan di server) ---------- */
-
-  async function loadSettingsFromServer(){
-    try{
-      const r = await fetch('/api/settings');
-      const j = await r.json();
-      if (j.apiKeyMasked) apiKeyInput.placeholder = `Tersimpan: ${j.apiKeyMasked} — isi untuk mengganti`;
-      if (j.userId) userIdInput.value = j.userId;
-      settingsNote.textContent = j.hasApiKey
-        ? 'API key tersimpan di server.'
-        : 'Belum ada API key tersimpan — isi lalu klik Simpan.';
-      return j;
-    }catch(e){
-      settingsNote.textContent = 'Gagal memuat pengaturan dari server.';
-      return null;
-    }
-  }
-
-  saveSettingsBtn.addEventListener('click', async () => {
-    saveSettingsBtn.disabled = true;
-    try{
-      const body = { userId: userIdInput.value.trim() };
-      if (apiKeyInput.value.trim()) body.apiKey = apiKeyInput.value.trim();
-      const r = await fetch('/api/settings', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(body),
-      });
-      const j = await r.json();
-      if (j.ok){
-        apiKeyInput.value = '';
-        if (j.apiKeyMasked) apiKeyInput.placeholder = `Tersimpan: ${j.apiKeyMasked} — isi untuk mengganti`;
-        settingsNote.textContent = 'Tersimpan.';
-        loadGroups();
-      } else {
-        settingsNote.textContent = 'Gagal menyimpan: ' + (j.error || 'unknown error');
-      }
-    }catch(e){
-      settingsNote.textContent = 'Gagal menyimpan: ' + e.message;
-    }
-    saveSettingsBtn.disabled = false;
-  });
-
-  /* ---------- Upload target: Personal vs Grup (role Admin/Developer/Owner) ---------- */
-
-  uploadTarget.addEventListener('change', () => {
-    groupPickerWrap.style.display = uploadTarget.value === 'group' ? '' : 'none';
-    if (uploadTarget.value === 'group' && !groupPicker.options.length) loadGroups();
-  });
-
-  refreshGroupsBtn.addEventListener('click', loadGroups);
-
-  async function loadGroups(){
-    const userId = userIdInput.value.trim();
-    if (!userId){ groupsNote.textContent = 'Isi & simpan User ID dulu untuk memuat daftar grup.'; return; }
-    groupsNote.textContent = 'Memuat daftar grup...';
-    try{
-      const r = await fetch(`/api/groups?userId=${encodeURIComponent(userId)}`);
-      const j = await r.json();
-      if (!j.ok){ groupsNote.textContent = 'Gagal memuat grup: ' + (j.error || ''); return; }
-      if (!j.all.length){ groupPicker.innerHTML = ''; groupsNote.textContent = 'User ID ini belum tergabung di grup manapun.'; return; }
-      // Tampilkan SEMUA grup (diurutkan: owner/qualifying dulu) supaya grup dengan nama
-      // role custom (mis. "Founder", "CEO") tetap bisa dipilih, bukan cuma yang cocok kata kunci.
-      groupPicker.innerHTML = j.all.map(g => {
-        const tag = g.isOwner ? ' ★ Owner' : (g.qualifies ? ' ✓' : '');
-        return `<option value="${g.groupId}">${escapeHtml(g.groupName)} — ${escapeHtml(g.roleName)}${tag}</option>`;
-      }).join('');
-      groupsNote.textContent = `${j.all.length} grup ditemukan (${j.qualifying.length} ditandai ★/✓ sebagai kandidat Admin/Developer/Owner). Grup lain tetap bisa dipilih manual kalau nama role-nya custom.`;
-    }catch(e){
-      groupsNote.textContent = 'Gagal memuat grup: ' + e.message;
-    }
-  }
-
-  function getUploadCreator(){
-    if (uploadTarget.value === 'group'){
-      if (!groupPicker.value) return null;
-      return { creatorType: 'group', creatorId: groupPicker.value };
-    }
-    if (!userIdInput.value.trim()) return null;
-    return { creatorType: 'user', creatorId: userIdInput.value.trim() };
-  }
-
-  loadSettingsFromServer().then(() => { if (userIdInput.value.trim()) loadGroups(); });
 
   /* ---------- Opsi A: auto-split 1 file gabungan (.rbxmx) ---------- */
 
@@ -997,9 +1026,11 @@ function downloadTextFile(filename, text, mime){
 
   async function uploadOne(i){
     const r = rows[i];
-    const target = getUploadCreator();
+    const target = window.getUploadCreator();
+    const apiKey = getApiKey();
+    if (!apiKey){ alert('Isi & simpan API Key dulu di bagian Pengaturan.'); return; }
     if (!target){
-      alert(uploadTarget.value === 'group' ? 'Pilih grup dulu (atau klik Refresh daftar grup).' : 'Isi &amp; simpan User ID dulu di bagian Pengaturan.');
+      alert('Isi & simpan User ID (atau pilih grup) dulu di bagian Pengaturan / Upload Sebagai.');
       return;
     }
     r.status = 'uploading'; renderBatch();
@@ -1011,6 +1042,7 @@ function downloadTextFile(filename, text, mime){
     fd.append('creatorType', target.creatorType);
     fd.append('creatorId', target.creatorId);
     fd.append('assetType', 'Animation');
+    fd.append('apiKey', apiKey);
 
     try{
       const res = await fetch('/api/upload', { method: 'POST', body: fd });
@@ -1052,23 +1084,11 @@ function downloadTextFile(filename, text, mime){
 
   // Field-field ini shared dengan tab Animasi (sudah dideklarasikan & diisi di sana)
   const namePrefix = document.getElementById('namePrefix');
-  const uploadTarget = document.getElementById('uploadTarget');
-  const groupPicker = document.getElementById('groupPicker');
-  const userIdInput = document.getElementById('userIdInput');
 
   const AUDIO_EXT = /\.(mp3|ogg|wav|flac)$/i;
   const AUDIO_MIME = { '.mp3':'audio/mpeg', '.ogg':'audio/ogg', '.wav':'audio/wav', '.flac':'audio/flac' };
 
   let rows = []; // {file, name, description, status, assetId, url, error}
-
-  function getUploadCreator(){
-    if (uploadTarget.value === 'group'){
-      if (!groupPicker.value) return null;
-      return { creatorType: 'group', creatorId: groupPicker.value };
-    }
-    if (!userIdInput.value.trim()) return null;
-    return { creatorType: 'user', creatorId: userIdInput.value.trim() };
-  }
 
   /* ---------- Opsi B: pilih banyak file audio manual ---------- */
 
@@ -1191,9 +1211,11 @@ function downloadTextFile(filename, text, mime){
 
   async function uploadOne(i){
     const r = rows[i];
-    const target = getUploadCreator();
+    const target = window.getUploadCreator();
+    const apiKey = getApiKey();
+    if (!apiKey){ alert('Isi & simpan API Key dulu di bagian Pengaturan.'); return; }
     if (!target){
-      alert(uploadTarget.value === 'group' ? 'Pilih grup dulu (atau klik Refresh daftar grup).' : 'Isi & simpan User ID dulu di bagian Pengaturan.');
+      alert('Isi & simpan User ID (atau pilih grup) dulu di bagian Pengaturan / Upload Sebagai.');
       return;
     }
     r.status = 'uploading'; renderBatch();
@@ -1205,6 +1227,7 @@ function downloadTextFile(filename, text, mime){
     fd.append('creatorType', target.creatorType);
     fd.append('creatorId', target.creatorId);
     fd.append('assetType', 'Audio');
+    fd.append('apiKey', apiKey);
 
     try{
       const res = await fetch('/api/upload', { method: 'POST', body: fd });
@@ -1262,6 +1285,115 @@ function downloadTextFile(filename, text, mime){
       copySummaryBtnAudio.textContent = 'Tersalin!';
       setTimeout(() => copySummaryBtnAudio.textContent = 'Copy sebagai teks', 1500);
     }catch(e){ alert('Gagal copy ke clipboard.'); }
+  });
+})();
+
+/* ================================================================ */
+/* TAB 4: DOWNLOAD AUDIO (dari Asset ID, endpoint publik Roblox)      */
+/* ================================================================ */
+(function(){
+  const downloadInput = document.getElementById('downloadInput');
+  const parseDownloadBtn = document.getElementById('parseDownloadBtn');
+  const clearDownloadBtn = document.getElementById('clearDownloadBtn');
+  const downloadSummary = document.getElementById('downloadSummary');
+  const downloadBatchArea = document.getElementById('downloadBatchArea');
+  const downloadBatchBody = document.getElementById('downloadBatchBody');
+  const downloadAllZipBtn = document.getElementById('downloadAllZipBtn');
+
+  let items = []; // {name, assetId, status, error, ext}
+
+  function parseInput(text){
+    // Prioritas 1: pola tabel Lua { "NAMA", 123456 }
+    const pairPattern = /\{\s*"((?:[^"\\]|\\.)*)"\s*,\s*(\d+)\s*\}/g;
+    const found = [];
+    let m;
+    while ((m = pairPattern.exec(text))){
+      found.push({ name: m[1].replace(/\\"/g, '"'), assetId: m[2] });
+    }
+    if (found.length) return found;
+    // Fallback: tiap angka 5+ digit dianggap 1 asset ID (misal daftar polos per baris)
+    const ids = Array.from(new Set(Array.from(text.matchAll(/\d{5,}/g)).map(x => x[0])));
+    return ids.map(id => ({ name: `Audio_${id}`, assetId: id }));
+  }
+
+  parseDownloadBtn.addEventListener('click', () => {
+    const parsed = parseInput(downloadInput.value);
+    if (!parsed.length){ alert('Tidak ada Asset ID yang terbaca dari teks ini.'); return; }
+    parsed.forEach(p => items.push({ name: p.name, assetId: p.assetId, status: 'pending', error: null, ext: null }));
+    downloadInput.value = '';
+    renderDownloadTable();
+  });
+
+  clearDownloadBtn.addEventListener('click', () => { items = []; renderDownloadTable(); });
+
+  function renderDownloadTable(){
+    if (!items.length){ downloadBatchArea.style.display = 'none'; downloadSummary.textContent = ''; return; }
+    downloadBatchArea.style.display = '';
+    downloadSummary.textContent = `${items.length} item di daftar`;
+    downloadBatchBody.innerHTML = items.map((it, i) => `
+      <tr data-i="${i}">
+        <td>${escapeHtml(it.name)}</td>
+        <td class="filename">${escapeHtml(it.assetId)}</td>
+        <td>${downloadStatusPill(it)}</td>
+        <td>
+          <a class="small" style="text-decoration:none; display:inline-block;" href="/api/download-audio?assetId=${encodeURIComponent(it.assetId)}&filename=${encodeURIComponent(it.name)}" target="_blank" rel="noopener">Download</a>
+          <button class="small" data-remove="${i}">Hapus</button>
+        </td>
+      </tr>
+    `).join('');
+    downloadBatchBody.querySelectorAll('[data-remove]').forEach(btn => {
+      btn.addEventListener('click', (e) => { items.splice(Number(e.target.dataset.remove), 1); renderDownloadTable(); });
+    });
+  }
+
+  function downloadStatusPill(it){
+    if (it.status === 'pending') return `<span class="status-pill">menunggu</span>`;
+    if (it.status === 'downloading') return `<span class="status-pill uploading">mengambil…</span>`;
+    if (it.status === 'success') return `<span class="status-pill success">✓ ${escapeHtml(it.ext||'')}</span>`;
+    if (it.status === 'error') return `<span class="status-pill error">gagal</span><br><span class="empty">${escapeHtml(it.error||'')}</span>`;
+  }
+
+  downloadAllZipBtn.addEventListener('click', async () => {
+    if (typeof JSZip === 'undefined'){
+      alert('Library ZIP gagal dimuat (cek koneksi internet ke cdnjs.cloudflare.com).');
+      return;
+    }
+    downloadAllZipBtn.disabled = true;
+    const zip = new JSZip();
+    let ok = 0, fail = 0;
+
+    for (let i = 0; i < items.length; i++){
+      const it = items[i];
+      it.status = 'downloading'; renderDownloadTable();
+      try{
+        const res = await fetch(`/api/download-audio?assetId=${encodeURIComponent(it.assetId)}&filename=${encodeURIComponent(it.name)}`);
+        if (!res.ok){
+          const j = await res.json().catch(() => null);
+          throw new Error(j?.error || `HTTP ${res.status}`);
+        }
+        const ext = res.headers.get('X-File-Ext') || 'mp3';
+        const blob = await res.blob();
+        const safeName = it.name.replace(/[^a-zA-Z0-9_\- ]+/g, '_').slice(0, 80) || `Audio_${it.assetId}`;
+        zip.file(`${safeName}.${ext}`, blob);
+        it.status = 'success'; it.ext = ext;
+        ok++;
+      }catch(e){
+        it.status = 'error'; it.error = e.message;
+        fail++;
+      }
+      renderDownloadTable();
+      await new Promise(r => setTimeout(r, 400));
+    }
+
+    downloadAllZipBtn.disabled = false;
+    if (ok > 0){
+      const content = await zip.generateAsync({ type: 'blob' });
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(content);
+      a.download = 'roblox-audio-download.zip';
+      a.click();
+    }
+    downloadSummary.textContent = `${items.length} item — ${ok} berhasil, ${fail} gagal.`;
   });
 })();
 </script>
