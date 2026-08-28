@@ -1,45 +1,23 @@
 const express = require('express');
 const multer = require('multer');
 const path = require('path');
-const fs = require('fs');
 
 const app = express();
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 20 * 1024 * 1024 } });
 
 const PORT = process.env.PORT || 3000;
 
-// Kalau deploy di Railway dan mau setting-nya tetap ada setelah redeploy,
-// attach sebuah Volume dan set env DATA_DIR ke mount path volume itu (mis. /data).
-const DATA_DIR = process.env.DATA_DIR || path.join(__dirname, 'data');
-const SETTINGS_PATH = path.join(DATA_DIR, 'settings.json');
-
-function loadSettings() {
-  try {
-    const raw = fs.readFileSync(SETTINGS_PATH, 'utf-8');
-    return JSON.parse(raw);
-  } catch (e) {
-    return {};
-  }
+// PENTING: server ini TIDAK menyimpan API key/User ID siapa pun di disk.
+// Kalau website ini dipakai lebih dari 1 orang (mis. dibagikan lewat 1 domain Railway),
+// setiap request upload wajib membawa apiKey/creatorId-nya sendiri (dikirim dari
+// localStorage browser masing-masing lewat form/JS). ROBLOX_API_KEY di env hanya
+// dipakai sebagai fallback kalau kamu deploy khusus untuk dirimu sendiri dan malas
+// isi form tiap buka browser baru.
+function resolveApiKey(req) {
+  return (req.body && req.body.apiKey) || process.env.ROBLOX_API_KEY || '';
 }
-function saveSettings(patch) {
-  const current = loadSettings();
-  const next = { ...current, ...patch };
-  fs.mkdirSync(DATA_DIR, { recursive: true });
-  fs.writeFileSync(SETTINGS_PATH, JSON.stringify(next, null, 2), 'utf-8');
-  return next;
-}
-function maskKey(key) {
-  if (!key) return null;
-  if (key.length <= 8) return '••••';
-  return key.slice(0, 4) + '••••' + key.slice(-4);
-}
-function currentApiKey() {
-  const s = loadSettings();
-  return s.apiKey || process.env.ROBLOX_API_KEY || '';
-}
-function currentUserId() {
-  const s = loadSettings();
-  return s.userId || process.env.ROBLOX_CREATOR_ID || '';
+function resolveUserId(req) {
+  return (req.body && req.body.creatorId) || process.env.ROBLOX_CREATOR_ID || '';
 }
 
 app.use(express.static(path.join(__dirname, 'public')));
@@ -48,44 +26,20 @@ app.use(express.json());
 // Role names we consider "cukup" untuk upload atas nama grup.
 const QUALIFYING_ROLE_PATTERN = /owner|admin|developer/i;
 
+// Non-secret: cuma memberi tahu apakah operator server ini men-set default lewat env.
 app.get('/api/settings', (req, res) => {
-  const apiKey = currentApiKey();
-  const userId = currentUserId();
   res.json({
-    hasApiKey: Boolean(apiKey),
-    apiKeyMasked: maskKey(apiKey),
-    userId,
+    hasEnvApiKey: Boolean(process.env.ROBLOX_API_KEY),
+    envUserId: process.env.ROBLOX_CREATOR_ID || '',
   });
 });
 
-app.post('/api/settings', (req, res) => {
-  try {
-    const patch = {};
-    if (typeof req.body.apiKey === 'string' && req.body.apiKey.trim()) {
-      patch.apiKey = req.body.apiKey.trim();
-    }
-    if (typeof req.body.userId === 'string') {
-      patch.userId = req.body.userId.trim();
-    }
-    const saved = saveSettings(patch);
-    res.json({
-      ok: true,
-      hasApiKey: Boolean(saved.apiKey || process.env.ROBLOX_API_KEY),
-      apiKeyMasked: maskKey(saved.apiKey || process.env.ROBLOX_API_KEY),
-      userId: saved.userId || '',
-    });
-  } catch (err) {
-    console.error(err);
-    res.status(500).json({ ok: false, error: 'Gagal menyimpan pengaturan: ' + err.message });
-  }
-});
-
 // Ambil daftar SEMUA grup tempat userId ini punya role. "qualifying" ditandai untuk
-// grup yang kelihatannya Admin/Developer/Owner (dari nama role, rank tertinggi/255,
-// atau memang pemilik grup itu — dicek dari field owner.userId, bukan cuma nama role,
-// karena banyak grup mengganti nama role Owner jadi custom seperti "Founder"/"CEO").
+// grup yang kelihatannya Admin/Developer/Owner (dari nama role, rank tinggi, atau
+// memang pemilik grup itu — dicek dari field owner.userId, bukan cuma nama role).
+// Endpoint publik Roblox ini tidak butuh API key.
 app.get('/api/groups', async (req, res) => {
-  const userId = req.query.userId || currentUserId();
+  const userId = req.query.userId;
   if (!userId) {
     return res.status(400).json({ ok: false, error: 'userId belum diisi.' });
   }
@@ -108,7 +62,6 @@ app.get('/api/groups', async (req, res) => {
         qualifies: Boolean(isOwner || nameMatches || highRank),
       };
     });
-    // Qualifying dulu (owner di atas), lalu sisanya, masing-masing diurutkan nama.
     all.sort((a, b) => {
       if (a.isOwner !== b.isOwner) return a.isOwner ? -1 : 1;
       if (a.qualifies !== b.qualifies) return a.qualifies ? -1 : 1;
@@ -122,7 +75,7 @@ app.get('/api/groups', async (req, res) => {
   }
 });
 
-// Extension -> { assetType, mimeType } accepted by this endpoint.
+// Extension -> { assetType, mimeType } accepted by the upload endpoint.
 const EXT_CONFIG = {
   '.rbxm': { assetType: 'Animation', mime: 'model/x-rbxm' },
   '.rbxmx': { assetType: 'Animation', mime: 'model/x-rbxm' },
@@ -134,9 +87,9 @@ const EXT_CONFIG = {
 
 app.post('/api/upload', upload.single('file'), async (req, res) => {
   try {
-    const apiKey = currentApiKey();
+    const apiKey = resolveApiKey(req);
     if (!apiKey) {
-      return res.status(500).json({ ok: false, error: 'API key belum diisi. Buka bagian Pengaturan dan simpan API key dulu.' });
+      return res.status(400).json({ ok: false, error: 'API key belum diisi. Isi di bagian Pengaturan (tersimpan di browser ini saja).' });
     }
     if (!req.file) {
       return res.status(400).json({ ok: false, error: 'Tidak ada file yang dikirim.' });
@@ -156,7 +109,7 @@ app.post('/api/upload', upload.single('file'), async (req, res) => {
     const displayName = (req.body.displayName || path.basename(req.file.originalname, ext)).slice(0, 50);
     const description = (req.body.description || '').slice(0, 1000);
     const creatorType = req.body.creatorType === 'group' ? 'group' : 'user';
-    const creatorId = req.body.creatorId || (creatorType === 'user' ? currentUserId() : '');
+    const creatorId = req.body.creatorId || (creatorType === 'user' ? resolveUserId(req) : '');
 
     if (!creatorId) {
       return res.status(400).json({ ok: false, error: 'Target upload (userId/groupId) belum dipilih.' });
@@ -195,10 +148,12 @@ app.post('/api/upload', upload.single('file'), async (req, res) => {
   }
 });
 
-// Manual status check (useful if a poll timed out and the user wants to re-check later)
+// Manual status check (kalau poll timeout dan mau dicek lagi nanti).
 app.get('/api/status/:operationId', async (req, res) => {
+  const apiKey = req.query.apiKey || process.env.ROBLOX_API_KEY || '';
+  if (!apiKey) return res.status(400).json({ ok: false, error: 'apiKey belum diisi.' });
   try {
-    const result = await pollOperation(currentApiKey(), req.params.operationId, 1);
+    const result = await pollOperation(apiKey, req.params.operationId, 1);
     return res.json(result);
   } catch (err) {
     return res.status(500).json({ ok: false, error: err.message });
@@ -233,6 +188,43 @@ async function pollOperation(apiKey, operationId, maxTries = 25) {
   }
   return { ok: false, done: false, error: 'Timeout menunggu hasil, coba cek status lagi nanti.', operationId };
 }
+
+// ---------------------------------------------------------------------------
+// Download audio by asset ID, lewat Roblox Asset Delivery API (endpoint publik,
+// tidak butuh API key — ini jalur yang sama yang dipakai client Roblox untuk
+// memutar audio, jadi hanya berfungsi untuk asset yang statusnya public/approved).
+// ---------------------------------------------------------------------------
+app.get('/api/download-audio', async (req, res) => {
+  const assetId = String(req.query.assetId || '').replace(/\D/g, '');
+  if (!assetId) {
+    return res.status(400).json({ ok: false, error: 'assetId tidak valid.' });
+  }
+  try {
+    const r = await fetch(`https://assetdelivery.roblox.com/v1/asset/?id=${assetId}`);
+    if (!r.ok) {
+      return res.status(r.status).json({
+        ok: false,
+        error: `Roblox merespons status ${r.status} — asset mungkin private, sudah dihapus, atau belum lolos moderasi.`,
+      });
+    }
+    const buf = Buffer.from(await r.arrayBuffer());
+    const contentType = r.headers.get('content-type') || 'audio/mpeg';
+    let ext = 'mp3';
+    if (contentType.includes('ogg')) ext = 'ogg';
+    else if (contentType.includes('wav')) ext = 'wav';
+    else if (contentType.includes('flac')) ext = 'flac';
+
+    const rawName = String(req.query.filename || `audio_${assetId}`).replace(/[^a-zA-Z0-9 _\-]+/g, '_').slice(0, 80);
+    res.setHeader('Content-Type', contentType);
+    res.setHeader('Content-Disposition', `attachment; filename="${rawName}.${ext}"`);
+    res.setHeader('X-File-Ext', ext);
+    res.setHeader('Access-Control-Expose-Headers', 'X-File-Ext, Content-Disposition');
+    res.send(buf);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ ok: false, error: 'Gagal mengambil audio dari Roblox: ' + err.message });
+  }
+});
 
 app.listen(PORT, () => {
   console.log(`Roblox tools running on port ${PORT}`);
