@@ -80,8 +80,10 @@ app.post('/api/settings', (req, res) => {
   }
 });
 
-// Ambil daftar grup tempat userId ini punya role, difilter yang levelnya
-// minimal Admin / Developer / Owner (dicocokkan dari nama role di grup itu).
+// Ambil daftar SEMUA grup tempat userId ini punya role. "qualifying" ditandai untuk
+// grup yang kelihatannya Admin/Developer/Owner (dari nama role, rank tertinggi/255,
+// atau memang pemilik grup itu — dicek dari field owner.userId, bukan cuma nama role,
+// karena banyak grup mengganti nama role Owner jadi custom seperti "Founder"/"CEO").
 app.get('/api/groups', async (req, res) => {
   const userId = req.query.userId || currentUserId();
   if (!userId) {
@@ -93,13 +95,26 @@ app.get('/api/groups', async (req, res) => {
     if (!r.ok) {
       return res.status(r.status).json({ ok: false, error: j?.errors?.[0]?.message || 'Gagal mengambil daftar grup dari Roblox.' });
     }
-    const all = (j.data || []).map((entry) => ({
-      groupId: entry.group.id,
-      groupName: entry.group.name,
-      roleName: entry.role.name,
-      rank: entry.role.rank,
-    }));
-    const qualifying = all.filter((g) => QUALIFYING_ROLE_PATTERN.test(g.roleName));
+    const all = (j.data || []).map((entry) => {
+      const isOwner = entry.group.owner && String(entry.group.owner.userId) === String(userId);
+      const nameMatches = QUALIFYING_ROLE_PATTERN.test(entry.role.name);
+      const highRank = entry.role.rank === 255 || entry.role.rank >= 200;
+      return {
+        groupId: entry.group.id,
+        groupName: entry.group.name,
+        roleName: entry.role.name,
+        rank: entry.role.rank,
+        isOwner,
+        qualifies: Boolean(isOwner || nameMatches || highRank),
+      };
+    });
+    // Qualifying dulu (owner di atas), lalu sisanya, masing-masing diurutkan nama.
+    all.sort((a, b) => {
+      if (a.isOwner !== b.isOwner) return a.isOwner ? -1 : 1;
+      if (a.qualifies !== b.qualifies) return a.qualifies ? -1 : 1;
+      return a.groupName.localeCompare(b.groupName);
+    });
+    const qualifying = all.filter((g) => g.qualifies);
     res.json({ ok: true, all, qualifying });
   } catch (err) {
     console.error(err);
