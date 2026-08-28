@@ -101,35 +101,16 @@
 <div class="wrap">
   <p class="eyebrow">// personal use tools</p>
   <h1>Roblox Tools</h1>
-  <p class="sub">Inspect file .rbxm / .rbxmx dan bulk-upload animasi ke Roblox lewat Open Cloud Assets API. API key disimpan aman di server (env variable), tidak pernah terkirim ke browser.</p>
+  <p class="sub">Inspect file .rbxm / .rbxmx, bulk-upload animasi, dan upload audio ke Roblox lewat Open Cloud Assets API. API key & User ID disimpan di server lewat form Pengaturan, tidak pernah terekspos ke browser orang lain.</p>
 
   <div class="tabs">
     <button class="tab-btn active" data-tab="inspector">Inspector</button>
-    <button class="tab-btn" data-tab="bulk">Bulk Upload Animasi</button>
+    <button class="tab-btn" data-tab="bulk">Upload Animasi</button>
+    <button class="tab-btn" data-tab="audio">Upload Audio</button>
   </div>
 
-  <!-- ============ TAB 1: INSPECTOR ============ -->
-  <div class="tab-panel active" id="panel-inspector">
-    <div class="drop" id="drop">
-      <b>Klik untuk pilih file</b>, atau drag &amp; drop di sini<br>
-      <span class="hint">.rbxm · .rbxmx — diproses 100% di browser kamu</span>
-      <input type="file" id="file" accept=".rbxm,.rbxmx">
-    </div>
-    <div id="result"></div>
-  </div>
-
-  <!-- ============ TAB 2: BULK UPLOAD ============ -->
-  <div class="tab-panel" id="panel-bulk">
-    <div class="notice info">
-      <b>Penting:</b> 1 file yang diupload ke Roblox = 1 asset Animation. Kalau kamu punya 1 file gabungan
-      berisi banyak animasi, upload langsung file itu cuma jadi <i>satu</i> asset saja. Ada 3 cara di bawah:
-      <b>Opsi A</b> pecah otomatis dari 1 file <code>.rbxmx</code> gabungan (dideteksi dari tiap
-      <code>KeyframeSequence</code>), <b>Opsi B</b> upload file yang sudah terpisah satu-satu, atau
-      <b>Opsi C</b> upload 1 file <code>.zip</code> berisi banyak file animasi sekaligus. File
-      <code>.rbxm</code> biner tidak bisa di-split otomatis (formatnya proprietary) — save as
-      <code>.rbxmx</code> dulu di Studio kalau butuh itu.
-    </div>
-
+  <!-- ============ SHARED: Settings + Upload Target (dipakai tab Animasi & Audio) ============ -->
+  <div id="sharedConfig" style="display:none;">
     <div class="card" style="margin-top:14px;">
       <h2>Pengaturan Akun Roblox</h2>
       <div class="field-row">
@@ -173,6 +154,29 @@
         </div>
       </div>
       <div id="groupsNote" class="empty"></div>
+    </div>
+  </div>
+
+  <!-- ============ TAB 1: INSPECTOR ============ -->
+  <div class="tab-panel active" id="panel-inspector">
+    <div class="drop" id="drop">
+      <b>Klik untuk pilih file</b>, atau drag &amp; drop di sini<br>
+      <span class="hint">.rbxm · .rbxmx — diproses 100% di browser kamu</span>
+      <input type="file" id="file" accept=".rbxm,.rbxmx">
+    </div>
+    <div id="result"></div>
+  </div>
+
+  <!-- ============ TAB 2: BULK UPLOAD ANIMASI ============ -->
+  <div class="tab-panel" id="panel-bulk">
+    <div class="notice info">
+      <b>Penting:</b> 1 file yang diupload ke Roblox = 1 asset Animation. Kalau kamu punya 1 file gabungan
+      berisi banyak animasi, upload langsung file itu cuma jadi <i>satu</i> asset saja. Ada 3 cara di bawah:
+      <b>Opsi A</b> pecah otomatis dari 1 file <code>.rbxmx</code> gabungan (dideteksi dari tiap
+      <code>KeyframeSequence</code>), <b>Opsi B</b> upload file yang sudah terpisah satu-satu, atau
+      <b>Opsi C</b> upload 1 file <code>.zip</code> berisi banyak file animasi sekaligus. File
+      <code>.rbxm</code> biner tidak bisa di-split otomatis (formatnya proprietary) — save as
+      <code>.rbxmx</code> dulu di Studio kalau butuh itu.
     </div>
 
     <div class="card" style="margin-top:14px;">
@@ -242,6 +246,70 @@
     </div>
   </div>
 
+  <!-- ============ TAB 3: UPLOAD AUDIO ============ -->
+  <div class="tab-panel" id="panel-audio">
+    <div class="notice info">
+      <b>Format audio</b> yang didukung Roblox: <code>.mp3</code>, <code>.ogg</code>, <code>.wav</code>,
+      <code>.flac</code> — maksimal 20 MB dan 7 menit per file. Sama seperti animasi, 1 file audio yang
+      diupload = 1 asset Audio.
+    </div>
+
+    <div class="card" style="margin-top:14px;">
+      <h2>Opsi A — Upload dari File ZIP</h2>
+      <p class="empty" style="margin:0 0 10px;">Punya banyak file audio (sfx, musik, voice line) yang di-compress jadi 1 ZIP? Upload di sini, tool otomatis membuka isinya dan menambahkan tiap file audio ke tabel di bawah.</p>
+      <div class="drop" id="dropZipAudio">
+        <b>Klik untuk pilih file ZIP</b>, atau drag &amp; drop di sini<br>
+        <span class="hint">.zip — isinya boleh campur .mp3/.ogg/.wav/.flac, boleh di dalam folder/subfolder</span>
+        <input type="file" id="fileZipAudio" accept=".zip">
+      </div>
+      <div id="zipStatusAudio"></div>
+    </div>
+
+    <div class="card" style="margin-top:14px;">
+      <h2>Opsi B — Upload File yang Sudah Terpisah</h2>
+      <p class="empty" style="margin:0 0 10px;">Pilih beberapa file audio sekaligus — masing-masing dianggap 1 asset Audio.</p>
+      <div class="drop" id="dropBulkAudio">
+        <b>Klik untuk pilih beberapa file</b>, atau drag &amp; drop di sini<br>
+        <span class="hint">.mp3 · .ogg · .wav · .flac</span>
+        <input type="file" id="fileBulkAudio" accept=".mp3,.ogg,.wav,.flac" multiple>
+      </div>
+
+      <div id="batchAreaAudio" style="display:none;">
+        <div class="toolbar" style="margin-top:16px;">
+          <button class="btn" id="uploadAllBtnAudio">Upload Semua</button>
+          <button class="btn ghost small" id="clearBatchBtnAudio">Kosongkan daftar</button>
+          <span class="empty" id="batchSummaryAudio" style="align-self:center;"></span>
+        </div>
+        <table class="batch">
+          <thead>
+            <tr>
+              <th style="width:26%">File</th>
+              <th style="width:24%">Display Name</th>
+              <th style="width:28%">Description</th>
+              <th style="width:12%">Status</th>
+              <th style="width:10%">Aksi</th>
+            </tr>
+          </thead>
+          <tbody id="batchBodyAudio"></tbody>
+        </table>
+      </div>
+    </div>
+
+    <div class="card" id="finalSummaryCardAudio" style="margin-top:14px; display:none;">
+      <h2>Ringkasan Hasil</h2>
+      <div class="toolbar">
+        <button class="small" id="downloadCsvBtnAudio">Download CSV</button>
+        <button class="small" id="copySummaryBtnAudio">Copy sebagai teks</button>
+      </div>
+      <table class="batch">
+        <thead>
+          <tr><th style="width:40%">Nama Audio</th><th style="width:25%">Asset ID</th><th style="width:20%">Status</th><th style="width:15%">Link</th></tr>
+        </thead>
+        <tbody id="finalSummaryBodyAudio"></tbody>
+      </table>
+    </div>
+  </div>
+
   <div class="signature">roblox-tools · inspector berjalan client-side, upload lewat server proxy</div>
 </div>
 
@@ -255,6 +323,7 @@ document.querySelectorAll('.tab-btn').forEach(btn => {
     document.querySelectorAll('.tab-panel').forEach(p => p.classList.remove('active'));
     btn.classList.add('active');
     document.getElementById('panel-' + btn.dataset.tab).classList.add('active');
+    document.getElementById('sharedConfig').style.display = btn.dataset.tab === 'inspector' ? 'none' : '';
   });
 });
 
@@ -908,6 +977,7 @@ function kv(k, v){ return `<div class="kv"><span>${k}</span><span>${v}</span></d
     fd.append('description', r.description);
     fd.append('creatorType', target.creatorType);
     fd.append('creatorId', target.creatorId);
+    fd.append('assetType', 'Animation');
 
     try{
       const res = await fetch('/api/upload', { method: 'POST', body: fd });
@@ -922,6 +992,235 @@ function kv(k, v){ return `<div class="kv"><span>${k}</span><span>${v}</span></d
     }
     renderBatch();
   }
+})();
+
+/* ================================================================ */
+/* TAB 3: UPLOAD AUDIO                                                */
+/* ================================================================ */
+(function(){
+  const dropZipAudio = document.getElementById('dropZipAudio');
+  const fileZipAudio = document.getElementById('fileZipAudio');
+  const zipStatusAudio = document.getElementById('zipStatusAudio');
+
+  const dropBulkAudio = document.getElementById('dropBulkAudio');
+  const fileBulkAudio = document.getElementById('fileBulkAudio');
+  const batchAreaAudio = document.getElementById('batchAreaAudio');
+  const batchBodyAudio = document.getElementById('batchBodyAudio');
+  const batchSummaryAudio = document.getElementById('batchSummaryAudio');
+  const uploadAllBtnAudio = document.getElementById('uploadAllBtnAudio');
+  const clearBatchBtnAudio = document.getElementById('clearBatchBtnAudio');
+
+  const finalSummaryCardAudio = document.getElementById('finalSummaryCardAudio');
+  const finalSummaryBodyAudio = document.getElementById('finalSummaryBodyAudio');
+  const downloadCsvBtnAudio = document.getElementById('downloadCsvBtnAudio');
+  const copySummaryBtnAudio = document.getElementById('copySummaryBtnAudio');
+
+  // Field-field ini shared dengan tab Animasi (sudah dideklarasikan & diisi di sana)
+  const namePrefix = document.getElementById('namePrefix');
+  const uploadTarget = document.getElementById('uploadTarget');
+  const groupPicker = document.getElementById('groupPicker');
+  const userIdInput = document.getElementById('userIdInput');
+
+  const AUDIO_EXT = /\.(mp3|ogg|wav|flac)$/i;
+  const AUDIO_MIME = { '.mp3':'audio/mpeg', '.ogg':'audio/ogg', '.wav':'audio/wav', '.flac':'audio/flac' };
+
+  let rows = []; // {file, name, description, status, assetId, url, error}
+
+  function getUploadCreator(){
+    if (uploadTarget.value === 'group'){
+      if (!groupPicker.value) return null;
+      return { creatorType: 'group', creatorId: groupPicker.value };
+    }
+    if (!userIdInput.value.trim()) return null;
+    return { creatorType: 'user', creatorId: userIdInput.value.trim() };
+  }
+
+  /* ---------- Opsi B: pilih banyak file audio manual ---------- */
+
+  dropBulkAudio.addEventListener('click', () => fileBulkAudio.click());
+  ['dragenter','dragover'].forEach(ev => dropBulkAudio.addEventListener(ev, e => { e.preventDefault(); dropBulkAudio.classList.add('drag'); }));
+  ['dragleave','drop'].forEach(ev => dropBulkAudio.addEventListener(ev, e => { e.preventDefault(); dropBulkAudio.classList.remove('drag'); }));
+  dropBulkAudio.addEventListener('drop', e => { addFiles(Array.from(e.dataTransfer.files)); });
+  fileBulkAudio.addEventListener('change', e => { addFiles(Array.from(e.target.files)); });
+
+  function addFiles(files){
+    const valid = files.filter(f => AUDIO_EXT.test(f.name));
+    valid.forEach(f => {
+      const base = f.name.replace(AUDIO_EXT, '');
+      rows.push({ file: f, name: (namePrefix.value || '') + base, description: '', status: 'pending', assetId: null, url: null, error: null });
+    });
+    renderBatch();
+  }
+
+  /* ---------- Opsi A: upload dari ZIP berisi banyak audio ---------- */
+
+  dropZipAudio.addEventListener('click', () => fileZipAudio.click());
+  ['dragenter','dragover'].forEach(ev => dropZipAudio.addEventListener(ev, e => { e.preventDefault(); dropZipAudio.classList.add('drag'); }));
+  ['dragleave','drop'].forEach(ev => dropZipAudio.addEventListener(ev, e => { e.preventDefault(); dropZipAudio.classList.remove('drag'); }));
+  dropZipAudio.addEventListener('drop', e => { const f = e.dataTransfer.files[0]; if (f) handleZipFile(f); });
+  fileZipAudio.addEventListener('change', e => { const f = e.target.files[0]; if (f) handleZipFile(f); });
+
+  async function handleZipFile(file){
+    if (typeof JSZip === 'undefined'){
+      zipStatusAudio.innerHTML = `<div class="notice"><b>Gagal:</b> library ZIP tidak berhasil dimuat (cek koneksi internet ke cdnjs.cloudflare.com).</div>`;
+      return;
+    }
+    zipStatusAudio.innerHTML = `<p class="empty">Membuka "${escapeHtml(file.name)}"...</p>`;
+    try{
+      const zip = await JSZip.loadAsync(file);
+      const entries = Object.values(zip.files).filter(e => !e.dir && AUDIO_EXT.test(e.name));
+      if (!entries.length) throw new Error('Tidak ada file audio (.mp3/.ogg/.wav/.flac) di dalam ZIP ini.');
+
+      let added = 0, skipped = 0;
+      for (const entry of entries){
+        const baseName = entry.name.split('/').pop();
+        try{
+          const arrBuf = await entry.async('arraybuffer');
+          const ext = baseName.slice(baseName.lastIndexOf('.')).toLowerCase();
+          const f = new File([arrBuf], baseName, { type: AUDIO_MIME[ext] || 'application/octet-stream' });
+          const nm = baseName.replace(AUDIO_EXT, '');
+          rows.push({ file: f, name: (namePrefix.value || '') + nm, description: '', status: 'pending', assetId: null, url: null, error: null });
+          added++;
+        }catch(e){ skipped++; }
+      }
+      renderBatch();
+      zipStatusAudio.innerHTML = `<div class="notice" style="background:var(--good-dim); color:#c9f5df; border-color:#1d6b47;">
+        ${added} file audio ditambahkan dari ZIP${skipped ? `, ${skipped} file gagal dibaca` : ''}. Cek nama di tabel Opsi B lalu klik "Upload Semua".
+      </div>`;
+    }catch(err){
+      zipStatusAudio.innerHTML = `<div class="notice"><b>Gagal buka ZIP:</b> ${escapeHtml(err.message || String(err))}</div>`;
+    }
+    fileZipAudio.value = '';
+  }
+
+  /* ---------- Tabel & upload ---------- */
+
+  function renderBatch(){
+    if (!rows.length){ batchAreaAudio.style.display = 'none'; return; }
+    batchAreaAudio.style.display = '';
+    batchBodyAudio.innerHTML = rows.map((r, i) => `
+      <tr data-i="${i}">
+        <td class="filename">${escapeHtml(r.file.name)}<br><span class="empty">${formatBytes(r.file.size)}</span></td>
+        <td><input type="text" value="${escapeHtml(r.name)}" data-field="name" ${r.status==='success' ? 'disabled' : ''}></td>
+        <td><input type="text" value="${escapeHtml(r.description)}" data-field="description" placeholder="opsional" ${r.status==='success' ? 'disabled' : ''}></td>
+        <td>${statusPill(r)}</td>
+        <td>${rowAction(r, i)}</td>
+      </tr>
+    `).join('');
+    updateSummary();
+
+    batchBodyAudio.querySelectorAll('input[data-field]').forEach(inp => {
+      inp.addEventListener('input', (e) => {
+        const tr = e.target.closest('tr');
+        const i = Number(tr.dataset.i);
+        rows[i][e.target.dataset.field] = e.target.value;
+      });
+    });
+    batchBodyAudio.querySelectorAll('[data-retry]').forEach(btn => {
+      btn.addEventListener('click', (e) => uploadOne(Number(e.target.dataset.retry)));
+    });
+    batchBodyAudio.querySelectorAll('[data-remove]').forEach(btn => {
+      btn.addEventListener('click', (e) => { rows.splice(Number(e.target.dataset.remove), 1); renderBatch(); });
+    });
+  }
+
+  function statusPill(r){
+    if (r.status === 'pending') return `<span class="status-pill">menunggu</span>`;
+    if (r.status === 'uploading') return `<span class="status-pill uploading">mengupload…</span>`;
+    if (r.status === 'success') return `<span class="status-pill success">✓ ${escapeHtml(r.moderationState||'ok')}</span><br><a class="link" href="${r.url}" target="_blank">lihat asset</a>`;
+    if (r.status === 'error') return `<span class="status-pill error">gagal</span><br><span class="empty">${escapeHtml(r.error||'')}</span>`;
+  }
+  function rowAction(r, i){
+    if (r.status === 'error') return `<button class="small" data-retry="${i}">Retry</button>`;
+    if (r.status === 'success') return '';
+    return `<button class="small" data-remove="${i}">Hapus</button>`;
+  }
+  function updateSummary(){
+    const done = rows.filter(r => r.status === 'success').length;
+    const failed = rows.filter(r => r.status === 'error').length;
+    batchSummaryAudio.textContent = `${rows.length} file — ${done} sukses, ${failed} gagal`;
+  }
+
+  clearBatchBtnAudio.addEventListener('click', () => { rows = []; renderBatch(); });
+
+  uploadAllBtnAudio.addEventListener('click', async () => {
+    uploadAllBtnAudio.disabled = true;
+    for (let i = 0; i < rows.length; i++){
+      if (rows[i].status === 'success') continue;
+      await uploadOne(i);
+      await new Promise(r => setTimeout(r, 1200));
+    }
+    uploadAllBtnAudio.disabled = false;
+    renderFinalSummary();
+  });
+
+  async function uploadOne(i){
+    const r = rows[i];
+    const target = getUploadCreator();
+    if (!target){
+      alert(uploadTarget.value === 'group' ? 'Pilih grup dulu (atau klik Refresh daftar grup).' : 'Isi & simpan User ID dulu di bagian Pengaturan.');
+      return;
+    }
+    r.status = 'uploading'; renderBatch();
+
+    const fd = new FormData();
+    fd.append('file', r.file);
+    fd.append('displayName', r.name);
+    fd.append('description', r.description);
+    fd.append('creatorType', target.creatorType);
+    fd.append('creatorId', target.creatorId);
+    fd.append('assetType', 'Audio');
+
+    try{
+      const res = await fetch('/api/upload', { method: 'POST', body: fd });
+      const json = await res.json();
+      if (json.ok){
+        r.status = 'success'; r.assetId = json.assetId; r.url = json.url; r.moderationState = json.moderationState;
+      } else {
+        r.status = 'error'; r.error = json.error || 'Gagal upload.';
+      }
+    } catch(e){
+      r.status = 'error'; r.error = e.message;
+    }
+    renderBatch();
+  }
+
+  function renderFinalSummary(){
+    if (!rows.length || rows.some(r => r.status === 'uploading' || r.status === 'pending')){
+      finalSummaryCardAudio.style.display = 'none';
+      return;
+    }
+    finalSummaryCardAudio.style.display = '';
+    finalSummaryBodyAudio.innerHTML = rows.map(r => `
+      <tr>
+        <td>${escapeHtml(r.name)}<br><span class="empty">${escapeHtml(r.file.name)}</span></td>
+        <td class="filename">${r.assetId ? escapeHtml(String(r.assetId)) : '—'}</td>
+        <td>${r.status === 'success' ? `<span class="status-pill success">✓ ${escapeHtml(r.moderationState||'ok')}</span>` : `<span class="status-pill error">gagal: ${escapeHtml(r.error||'')}</span>`}</td>
+        <td>${r.url ? `<a class="link" href="${r.url}" target="_blank">buka</a>` : '—'}</td>
+      </tr>
+    `).join('');
+  }
+
+  downloadCsvBtnAudio.addEventListener('click', () => {
+    const header = 'name,filename,assetId,status,moderationState,url,error\n';
+    const lines = rows.map(r => [
+      r.name, r.file.name, r.assetId || '', r.status, r.moderationState || '', r.url || '', (r.error||'').replace(/,/g,';')
+    ].map(v => `"${String(v).replace(/"/g,'""')}"`).join(',')).join('\n');
+    const blob = new Blob([header + lines], { type: 'text/csv' });
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = 'hasil-upload-audio.csv';
+    a.click();
+  });
+
+  copySummaryBtnAudio.addEventListener('click', async () => {
+    const text = rows.map(r => `${r.name}\t${r.assetId || '(gagal: ' + (r.error||'') + ')'}`).join('\n');
+    try{
+      await navigator.clipboard.writeText(text);
+      copySummaryBtnAudio.textContent = 'Tersalin!';
+      setTimeout(() => copySummaryBtnAudio.textContent = 'Copy sebagai teks', 1500);
+    }catch(e){ alert('Gagal copy ke clipboard.'); }
+  });
 })();
 </script>
 </body>
