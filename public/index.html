@@ -236,6 +236,8 @@
       <div class="toolbar">
         <button class="small" id="downloadCsvBtn">Download CSV</button>
         <button class="small" id="copySummaryBtn">Copy sebagai teks</button>
+        <input type="text" id="luaTableName" value="Dances" style="width:120px; font-family:var(--mono); font-size:11px; background:var(--panel-2); color:var(--text); border:1px solid var(--line); border-radius:6px; padding:5px 8px;">
+        <button class="small" id="downloadLuaBtn">Download Lua Config</button>
       </div>
       <table class="batch">
         <thead>
@@ -300,6 +302,8 @@
       <div class="toolbar">
         <button class="small" id="downloadCsvBtnAudio">Download CSV</button>
         <button class="small" id="copySummaryBtnAudio">Copy sebagai teks</button>
+        <input type="text" id="luaTableNameAudio" value="Audio" style="width:120px; font-family:var(--mono); font-size:11px; background:var(--panel-2); color:var(--text); border:1px solid var(--line); border-radius:6px; padding:5px 8px;">
+        <button class="small" id="downloadLuaBtnAudio">Download Lua Config</button>
       </div>
       <table class="batch">
         <thead>
@@ -339,6 +343,24 @@ function formatBytes(n){
   return (n/1024/1024).toFixed(2) + ' MB';
 }
 function kv(k, v){ return `<div class="kv"><span>${k}</span><span>${v}</span></div>`; }
+
+function escapeLuaString(s){
+  return String(s).replace(/\\/g, '\\\\').replace(/"/g, '\\"');
+}
+// Bangun file Lua persis format ModuleScript config Roblox:
+// return { ["TableName"] = { { "NAMA", assetId }, ... } }
+function buildLuaConfig(tableName, entries){
+  const safeTable = (tableName || 'Assets').trim() || 'Assets';
+  const lines = entries.map(e => `        { "${escapeLuaString(e.name)}", ${e.assetId} },`);
+  return `return {\n    ["${escapeLuaString(safeTable)}"] = {\n${lines.join('\n')}\n    }\n}\n`;
+}
+function downloadTextFile(filename, text, mime){
+  const blob = new Blob([text], { type: mime || 'text/plain' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = filename;
+  a.click();
+}
 
 /* ================================================================ */
 /* TAB 1: INSPECTOR (client-side parsing, same as standalone viewer)  */
@@ -624,6 +646,8 @@ function kv(k, v){ return `<div class="kv"><span>${k}</span><span>${v}</span></d
   const finalSummaryBody = document.getElementById('finalSummaryBody');
   const downloadCsvBtn = document.getElementById('downloadCsvBtn');
   const copySummaryBtn = document.getElementById('copySummaryBtn');
+  const luaTableName = document.getElementById('luaTableName');
+  const downloadLuaBtn = document.getElementById('downloadLuaBtn');
 
   let rows = []; // {file, name, description, status, assetId, url, error}
 
@@ -955,6 +979,13 @@ function kv(k, v){ return `<div class="kv"><span>${k}</span><span>${v}</span></d
     a.click();
   });
 
+  downloadLuaBtn.addEventListener('click', () => {
+    const successRows = rows.filter(r => r.status === 'success' && r.assetId);
+    if (!successRows.length){ alert('Belum ada animasi yang sukses diupload.'); return; }
+    const text = buildLuaConfig(luaTableName.value, successRows.map(r => ({ name: r.name, assetId: r.assetId })));
+    downloadTextFile('animasi-config.lua', text, 'text/plain');
+  });
+
   copySummaryBtn.addEventListener('click', async () => {
     const text = rows.map(r => `${r.name}\t${r.assetId || '(gagal: ' + (r.error||'') + ')'}`).join('\n');
     try{
@@ -1016,6 +1047,8 @@ function kv(k, v){ return `<div class="kv"><span>${k}</span><span>${v}</span></d
   const finalSummaryBodyAudio = document.getElementById('finalSummaryBodyAudio');
   const downloadCsvBtnAudio = document.getElementById('downloadCsvBtnAudio');
   const copySummaryBtnAudio = document.getElementById('copySummaryBtnAudio');
+  const luaTableNameAudio = document.getElementById('luaTableNameAudio');
+  const downloadLuaBtnAudio = document.getElementById('downloadLuaBtnAudio');
 
   // Field-field ini shared dengan tab Animasi (sudah dideklarasikan & diisi di sana)
   const namePrefix = document.getElementById('namePrefix');
@@ -1213,6 +1246,13 @@ function kv(k, v){ return `<div class="kv"><span>${k}</span><span>${v}</span></d
     a.href = URL.createObjectURL(blob);
     a.download = 'hasil-upload-audio.csv';
     a.click();
+  });
+
+  downloadLuaBtnAudio.addEventListener('click', () => {
+    const successRows = rows.filter(r => r.status === 'success' && r.assetId);
+    if (!successRows.length){ alert('Belum ada audio yang sukses diupload.'); return; }
+    const text = buildLuaConfig(luaTableNameAudio.value, successRows.map(r => ({ name: r.name, assetId: r.assetId })));
+    downloadTextFile('audio-config.lua', text, 'text/plain');
   });
 
   copySummaryBtnAudio.addEventListener('click', async () => {
