@@ -107,6 +107,16 @@ app.get('/api/groups', async (req, res) => {
   }
 });
 
+// Extension -> { assetType, mimeType } accepted by this endpoint.
+const EXT_CONFIG = {
+  '.rbxm': { assetType: 'Animation', mime: 'model/x-rbxm' },
+  '.rbxmx': { assetType: 'Animation', mime: 'model/x-rbxm' },
+  '.mp3': { assetType: 'Audio', mime: 'audio/mpeg' },
+  '.ogg': { assetType: 'Audio', mime: 'audio/ogg' },
+  '.wav': { assetType: 'Audio', mime: 'audio/wav' },
+  '.flac': { assetType: 'Audio', mime: 'audio/flac' },
+};
+
 app.post('/api/upload', upload.single('file'), async (req, res) => {
   try {
     const apiKey = currentApiKey();
@@ -118,8 +128,14 @@ app.post('/api/upload', upload.single('file'), async (req, res) => {
     }
 
     const ext = path.extname(req.file.originalname).toLowerCase();
-    if (ext !== '.rbxm' && ext !== '.rbxmx') {
-      return res.status(400).json({ ok: false, error: 'File harus .rbxm atau .rbxmx.' });
+    const cfg = EXT_CONFIG[ext];
+    if (!cfg) {
+      return res.status(400).json({ ok: false, error: 'Ekstensi tidak didukung. Gunakan .rbxm/.rbxmx untuk animasi atau .mp3/.ogg/.wav/.flac untuk audio.' });
+    }
+
+    const requestedType = req.body.assetType === 'Audio' ? 'Audio' : req.body.assetType === 'Animation' ? 'Animation' : cfg.assetType;
+    if (requestedType !== cfg.assetType) {
+      return res.status(400).json({ ok: false, error: `Ekstensi file (${ext}) tidak cocok dengan asset type yang diminta (${requestedType}).` });
     }
 
     const displayName = (req.body.displayName || path.basename(req.file.originalname, ext)).slice(0, 50);
@@ -134,7 +150,7 @@ app.post('/api/upload', upload.single('file'), async (req, res) => {
     const creator = creatorType === 'group' ? { groupId: String(creatorId) } : { userId: String(creatorId) };
 
     const requestJson = {
-      assetType: 'Animation',
+      assetType: cfg.assetType,
       displayName,
       description,
       creationContext: { creator },
@@ -142,7 +158,7 @@ app.post('/api/upload', upload.single('file'), async (req, res) => {
 
     const form = new FormData();
     form.append('request', JSON.stringify(requestJson));
-    form.append('fileContent', new Blob([req.file.buffer], { type: 'model/x-rbxm' }), req.file.originalname);
+    form.append('fileContent', new Blob([req.file.buffer], { type: cfg.mime }), req.file.originalname);
 
     const createRes = await fetch('https://apis.roblox.com/assets/v1/assets', {
       method: 'POST',
