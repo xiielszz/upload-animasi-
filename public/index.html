@@ -141,7 +141,7 @@
           </select>
         </div>
         <div class="field" id="groupPickerWrap" style="display:none; min-width:280px;">
-          <label>Pilih Grup (role: Admin / Developer / Owner)</label>
+          <label>Pilih Grup (★ = Owner, ✓ = kandidat Admin/Dev)</label>
           <select id="groupPicker"></select>
         </div>
         <div class="field" style="justify-content:flex-end;">
@@ -681,18 +681,20 @@ function kv(k, v){ return `<div class="kv"><span>${k}</span><span>${v}</span></d
 
   async function loadGroups(){
     const userId = userIdInput.value.trim();
-    if (!userId){ groupsNote.textContent = 'Isi &amp; simpan User ID dulu untuk memuat daftar grup.'; return; }
+    if (!userId){ groupsNote.textContent = 'Isi & simpan User ID dulu untuk memuat daftar grup.'; return; }
     groupsNote.textContent = 'Memuat daftar grup...';
     try{
       const r = await fetch(`/api/groups?userId=${encodeURIComponent(userId)}`);
       const j = await r.json();
       if (!j.ok){ groupsNote.textContent = 'Gagal memuat grup: ' + (j.error || ''); return; }
-      groupPicker.innerHTML = j.qualifying.map(g =>
-        `<option value="${g.groupId}">${escapeHtml(g.groupName)} — ${escapeHtml(g.roleName)}</option>`
-      ).join('');
-      groupsNote.textContent = j.qualifying.length
-        ? `${j.qualifying.length} grup ditemukan dengan role Admin/Developer/Owner.`
-        : 'Tidak ada grup dengan role Admin/Developer/Owner untuk User ID ini.';
+      if (!j.all.length){ groupPicker.innerHTML = ''; groupsNote.textContent = 'User ID ini belum tergabung di grup manapun.'; return; }
+      // Tampilkan SEMUA grup (diurutkan: owner/qualifying dulu) supaya grup dengan nama
+      // role custom (mis. "Founder", "CEO") tetap bisa dipilih, bukan cuma yang cocok kata kunci.
+      groupPicker.innerHTML = j.all.map(g => {
+        const tag = g.isOwner ? ' ★ Owner' : (g.qualifies ? ' ✓' : '');
+        return `<option value="${g.groupId}">${escapeHtml(g.groupName)} — ${escapeHtml(g.roleName)}${tag}</option>`;
+      }).join('');
+      groupsNote.textContent = `${j.all.length} grup ditemukan (${j.qualifying.length} ditandai ★/✓ sebagai kandidat Admin/Developer/Owner). Grup lain tetap bisa dipilih manual kalau nama role-nya custom.`;
     }catch(e){
       groupsNote.textContent = 'Gagal memuat grup: ' + e.message;
     }
