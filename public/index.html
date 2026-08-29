@@ -101,13 +101,13 @@
 <div class="wrap">
   <p class="eyebrow">// personal use tools</p>
   <h1>Roblox Tools</h1>
-  <p class="sub">Inspect file .rbxm / .rbxmx, bulk-upload animasi, dan upload audio ke Roblox lewat Open Cloud Assets API. API key & User ID disimpan di server lewat form Pengaturan, tidak pernah terekspos ke browser orang lain.</p>
+  <p class="sub">Inspect file .rbxm / .rbxmx, dan bulk-upload animasi/audio ke Roblox lewat Open Cloud Assets API. API key & User ID tersimpan di browser masing-masing (bukan server), jadi aman dipakai bersama.</p>
 
   <div class="tabs">
     <button class="tab-btn active" data-tab="inspector">Inspector</button>
     <button class="tab-btn" data-tab="bulk">Upload Animasi</button>
     <button class="tab-btn" data-tab="audio">Upload Audio</button>
-    <button class="tab-btn" data-tab="download">Download Audio</button>
+    <button class="tab-btn" data-tab="admin">Admin</button>
   </div>
 
   <!-- ============ SHARED: Settings + Upload Target (dipakai tab Animasi & Audio) ============ -->
@@ -315,45 +315,76 @@
     </div>
   </div>
 
-  <!-- ============ TAB 4: DOWNLOAD AUDIO ============ -->
-  <div class="tab-panel" id="panel-download">
-    <div class="notice info">
-      Download audio Roblox berdasarkan Asset ID lewat Asset Delivery API (endpoint publik, tidak butuh
-      API key — sama seperti jalur yang dipakai client Roblox untuk memutar audio, jadi hanya berhasil
-      untuk asset yang statusnya <b>public/approved</b>).
-    </div>
-
-    <div class="card" style="margin-top:14px;">
-      <h2>Tempel Asset ID atau Tabel Lua</h2>
-      <p class="empty" style="margin:0 0 10px;">Bisa tempel daftar Asset ID satu per baris, atau langsung tempel isi tabel Lua seperti <code>{ "NAMA", 123456789 }</code> (nama otomatis ikut terbaca).</p>
-      <textarea id="downloadInput" rows="8" style="width:100%; background:var(--panel-2); border:1px solid var(--line); color:var(--text); border-radius:8px; padding:10px 12px; font-family:var(--mono); font-size:12.5px; resize:vertical;" placeholder='mis.&#10;{ "STYLISH FLOATING", 124173739995464 },&#10;{ "AFROBEAT", 74227126026309 },&#10;&#10;atau cukup:&#10;124173739995464&#10;74227126026309'></textarea>
-      <div class="toolbar" style="margin-top:10px;">
-        <button class="btn" id="parseDownloadBtn">Parse & Tambah ke Daftar</button>
-        <button class="btn ghost small" id="clearDownloadBtn">Kosongkan daftar</button>
-        <span class="empty" id="downloadSummary" style="align-self:center;"></span>
+  <!-- ============ TAB 4: ADMIN (kelola Access Key) ============ -->
+  <div class="tab-panel" id="panel-admin">
+    <div class="card" id="adminLockCard">
+      <h2>Masuk sebagai Admin</h2>
+      <p class="empty" style="margin:0 0 10px;">Masukkan Admin Secret (di-set lewat env <code>ADMIN_SECRET</code> di server) untuk mengelola Access Key.</p>
+      <div class="field-row">
+        <div class="field" style="flex:1; min-width:220px;">
+          <label>Admin Secret</label>
+          <input id="adminSecretInput" type="password" placeholder="Admin secret">
+        </div>
+        <div class="field" style="justify-content:flex-end;">
+          <label>&nbsp;</label>
+          <button class="btn" id="adminUnlockBtn">Unlock</button>
+        </div>
       </div>
+      <div id="adminLockNote" class="empty"></div>
     </div>
 
-    <div class="card" id="downloadBatchArea" style="margin-top:14px; display:none;">
-      <h2>Daftar Audio</h2>
+    <div class="card" id="adminPanel" style="margin-top:14px; display:none;">
+      <h2>Buat Access Key Baru</h2>
+      <div class="field-row">
+        <div class="field">
+          <label>Label (opsional)</label>
+          <input id="newKeyLabel" placeholder="mis. Teman A">
+        </div>
+        <div class="field">
+          <label>Berlaku (hari)</label>
+          <input id="newKeyDays" type="number" value="30" min="0" style="width:100px;">
+        </div>
+        <div class="field" style="justify-content:flex-end;">
+          <label>&nbsp;</label>
+          <button class="btn" id="createKeyBtn">Buat Key</button>
+        </div>
+      </div>
+      <div id="newKeyResult"></div>
+    </div>
+
+    <div class="card" id="adminKeyListCard" style="margin-top:14px; display:none;">
+      <h2>Daftar Access Key</h2>
       <div class="toolbar">
-        <button class="btn" id="downloadAllZipBtn">Download Semua sebagai ZIP</button>
+        <button class="small" id="refreshKeysBtn">Refresh</button>
       </div>
       <table class="batch">
         <thead>
           <tr>
-            <th style="width:35%">Nama</th>
-            <th style="width:20%">Asset ID</th>
-            <th style="width:20%">Status</th>
-            <th style="width:25%">Aksi</th>
+            <th style="width:25%">Key</th>
+            <th style="width:20%">Label</th>
+            <th style="width:20%">Expired</th>
+            <th style="width:15%">Status</th>
+            <th style="width:20%">Aksi</th>
           </tr>
         </thead>
-        <tbody id="downloadBatchBody"></tbody>
+        <tbody id="adminKeyListBody"></tbody>
       </table>
     </div>
   </div>
 
   <div class="signature">roblox-tools · inspector berjalan client-side, upload lewat server proxy</div>
+</div>
+
+<!-- ============ ACCESS KEY LOGIN GATE ============ -->
+<div id="accessGate" style="position:fixed; inset:0; background:var(--bg); display:flex; align-items:center; justify-content:center; z-index:999; padding:20px;">
+  <div class="card" style="max-width:360px; width:100%;">
+    <p class="eyebrow" style="margin-top:0;">// access required</p>
+    <h2 style="margin-top:0;">Masukkan Access Key</h2>
+    <p class="empty" style="margin:0 0 12px;">Website ini butuh key untuk dipakai. Minta key ke admin kalau belum punya.</p>
+    <input id="gateKeyInput" type="text" placeholder="RBXT-XXXXXXXXXXXX" style="width:100%; background:var(--panel-2); border:1px solid var(--line); color:var(--text); border-radius:8px; padding:10px 12px; font-family:var(--mono); font-size:13px; margin-bottom:10px;">
+    <button class="btn" id="gateSubmitBtn" style="width:100%;">Masuk</button>
+    <div id="gateNote" class="empty" style="margin-top:10px;"></div>
+  </div>
 </div>
 
 <script>
@@ -445,7 +476,7 @@ function maskKeyClient(key){
     if (!userId){ groupsNote.textContent = 'Isi & simpan User ID dulu untuk memuat daftar grup.'; return; }
     groupsNote.textContent = 'Memuat daftar grup...';
     try{
-      const r = await fetch(`/api/groups?userId=${encodeURIComponent(userId)}`);
+      const r = await fetch(`/api/groups?userId=${encodeURIComponent(userId)}`, { headers: { 'x-access-key': window.getAccessKey ? window.getAccessKey() : '' } });
       const j = await r.json();
       if (!j.ok){ groupsNote.textContent = 'Gagal memuat grup: ' + (j.error || ''); return; }
       if (!j.all.length){ groupPicker.innerHTML = ''; groupsNote.textContent = 'User ID ini belum tergabung di grup manapun.'; return; }
@@ -1047,7 +1078,7 @@ function maskKeyClient(key){
     fd.append('apiKey', apiKey);
 
     try{
-      const res = await fetch('/api/upload', { method: 'POST', body: fd });
+      const res = await fetch('/api/upload', { method: 'POST', headers: { 'x-access-key': window.getAccessKey ? window.getAccessKey() : '' }, body: fd });
       const json = await res.json();
       if (json.ok){
         r.status = 'success'; r.assetId = json.assetId; r.url = json.url; r.moderationState = json.moderationState;
@@ -1232,7 +1263,7 @@ function maskKeyClient(key){
     fd.append('apiKey', apiKey);
 
     try{
-      const res = await fetch('/api/upload', { method: 'POST', body: fd });
+      const res = await fetch('/api/upload', { method: 'POST', headers: { 'x-access-key': window.getAccessKey ? window.getAccessKey() : '' }, body: fd });
       const json = await res.json();
       if (json.ok){
         r.status = 'success'; r.assetId = json.assetId; r.url = json.url; r.moderationState = json.moderationState;
@@ -1291,112 +1322,146 @@ function maskKeyClient(key){
 })();
 
 /* ================================================================ */
-/* TAB 4: DOWNLOAD AUDIO (dari Asset ID, endpoint publik Roblox)      */
+/* ACCESS KEY GATE + ADMIN PANEL                                      */
 /* ================================================================ */
 (function(){
-  const downloadInput = document.getElementById('downloadInput');
-  const parseDownloadBtn = document.getElementById('parseDownloadBtn');
-  const clearDownloadBtn = document.getElementById('clearDownloadBtn');
-  const downloadSummary = document.getElementById('downloadSummary');
-  const downloadBatchArea = document.getElementById('downloadBatchArea');
-  const downloadBatchBody = document.getElementById('downloadBatchBody');
-  const downloadAllZipBtn = document.getElementById('downloadAllZipBtn');
+  const LS_ACCESS_KEY = 'roblox_tools_access_key';
+  const accessGate = document.getElementById('accessGate');
+  const gateKeyInput = document.getElementById('gateKeyInput');
+  const gateSubmitBtn = document.getElementById('gateSubmitBtn');
+  const gateNote = document.getElementById('gateNote');
 
-  let items = []; // {name, assetId, status, error, ext}
+  window.getAccessKey = function(){ return localStorage.getItem(LS_ACCESS_KEY) || ''; };
 
-  function parseInput(text){
-    // Prioritas 1: pola tabel Lua { "NAMA", 123456 }
-    const pairPattern = /\{\s*"((?:[^"\\]|\\.)*)"\s*,\s*(\d+)\s*\}/g;
-    const found = [];
-    let m;
-    while ((m = pairPattern.exec(text))){
-      found.push({ name: m[1].replace(/\\"/g, '"'), assetId: m[2] });
+  async function verifyKey(key){
+    try{
+      const r = await fetch('/api/verify-key', { headers: { 'x-access-key': key } });
+      const j = await r.json();
+      return j.ok ? { ok: true } : { ok: false, error: j.error || 'Key tidak valid.' };
+    }catch(e){
+      return { ok: false, error: 'Gagal menghubungi server: ' + e.message };
     }
-    if (found.length) return found;
-    // Fallback: tiap angka 5+ digit dianggap 1 asset ID (misal daftar polos per baris)
-    const ids = Array.from(new Set(Array.from(text.matchAll(/\d{5,}/g)).map(x => x[0])));
-    return ids.map(id => ({ name: `Audio_${id}`, assetId: id }));
   }
 
-  parseDownloadBtn.addEventListener('click', () => {
-    const parsed = parseInput(downloadInput.value);
-    if (!parsed.length){ alert('Tidak ada Asset ID yang terbaca dari teks ini.'); return; }
-    parsed.forEach(p => items.push({ name: p.name, assetId: p.assetId, status: 'pending', error: null, ext: null }));
-    downloadInput.value = '';
-    renderDownloadTable();
+  async function tryUnlock(key){
+    gateNote.textContent = 'Memeriksa key...';
+    const result = await verifyKey(key);
+    if (result.ok){
+      localStorage.setItem(LS_ACCESS_KEY, key);
+      accessGate.style.display = 'none';
+    } else {
+      localStorage.removeItem(LS_ACCESS_KEY);
+      gateNote.textContent = result.error;
+    }
+  }
+
+  gateSubmitBtn.addEventListener('click', () => {
+    const key = gateKeyInput.value.trim();
+    if (!key){ gateNote.textContent = 'Isi key dulu.'; return; }
+    tryUnlock(key);
+  });
+  gateKeyInput.addEventListener('keydown', (e) => { if (e.key === 'Enter') gateSubmitBtn.click(); });
+
+  const saved = window.getAccessKey();
+  if (saved){ tryUnlock(saved); }
+  else { accessGate.style.display = 'flex'; }
+})();
+
+/* ================================================================ */
+/* TAB: ADMIN (kelola Access Key)                                     */
+/* ================================================================ */
+(function(){
+  const adminSecretInput = document.getElementById('adminSecretInput');
+  const adminUnlockBtn = document.getElementById('adminUnlockBtn');
+  const adminLockNote = document.getElementById('adminLockNote');
+  const adminLockCard = document.getElementById('adminLockCard');
+  const adminPanel = document.getElementById('adminPanel');
+  const adminKeyListCard = document.getElementById('adminKeyListCard');
+
+  const newKeyLabel = document.getElementById('newKeyLabel');
+  const newKeyDays = document.getElementById('newKeyDays');
+  const createKeyBtn = document.getElementById('createKeyBtn');
+  const newKeyResult = document.getElementById('newKeyResult');
+
+  const refreshKeysBtn = document.getElementById('refreshKeysBtn');
+  const adminKeyListBody = document.getElementById('adminKeyListBody');
+
+  let adminSecret = '';
+
+  adminUnlockBtn.addEventListener('click', async () => {
+    const secret = adminSecretInput.value.trim();
+    if (!secret){ adminLockNote.textContent = 'Isi admin secret dulu.'; return; }
+    adminLockNote.textContent = 'Memeriksa...';
+    try{
+      const r = await fetch('/api/admin/keys', { headers: { 'x-admin-secret': secret } });
+      const j = await r.json();
+      if (!j.ok){ adminLockNote.textContent = j.error || 'Gagal unlock.'; return; }
+      adminSecret = secret;
+      adminSecretInput.value = '';
+      adminLockCard.style.display = 'none';
+      adminPanel.style.display = '';
+      adminKeyListCard.style.display = '';
+      renderKeyList(j.keys);
+    }catch(e){
+      adminLockNote.textContent = 'Gagal: ' + e.message;
+    }
   });
 
-  clearDownloadBtn.addEventListener('click', () => { items = []; renderDownloadTable(); });
+  createKeyBtn.addEventListener('click', async () => {
+    createKeyBtn.disabled = true;
+    try{
+      const r = await fetch('/api/admin/keys', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'x-admin-secret': adminSecret },
+        body: JSON.stringify({ label: newKeyLabel.value.trim(), expiresInDays: Number(newKeyDays.value) || 0 }),
+      });
+      const j = await r.json();
+      if (!j.ok){ newKeyResult.innerHTML = `<div class="notice">${escapeHtml(j.error || 'Gagal membuat key.')}</div>`; return; }
+      newKeyResult.innerHTML = `<div class="notice" style="background:var(--good-dim); color:#c9f5df; border-color:#1d6b47;">
+        Key baru: <b style="font-family:var(--mono);">${escapeHtml(j.key)}</b> — ${j.expiresAt ? 'berlaku sampai ' + new Date(j.expiresAt).toLocaleString('id-ID') : 'tidak pernah expired'}.
+        <button class="small" style="margin-left:8px;" onclick="navigator.clipboard.writeText('${j.key}')">Copy</button>
+      </div>`;
+      newKeyLabel.value = '';
+      loadKeyList();
+    }catch(e){
+      newKeyResult.innerHTML = `<div class="notice">Gagal: ${escapeHtml(e.message)}</div>`;
+    }
+    createKeyBtn.disabled = false;
+  });
 
-  function renderDownloadTable(){
-    if (!items.length){ downloadBatchArea.style.display = 'none'; downloadSummary.textContent = ''; return; }
-    downloadBatchArea.style.display = '';
-    downloadSummary.textContent = `${items.length} item di daftar`;
-    downloadBatchBody.innerHTML = items.map((it, i) => `
-      <tr data-i="${i}">
-        <td>${escapeHtml(it.name)}</td>
-        <td class="filename">${escapeHtml(it.assetId)}</td>
-        <td>${downloadStatusPill(it)}</td>
-        <td>
-          <a class="small" style="text-decoration:none; display:inline-block;" href="/api/download-audio?assetId=${encodeURIComponent(it.assetId)}&filename=${encodeURIComponent(it.name)}" target="_blank" rel="noopener">Download</a>
-          <button class="small" data-remove="${i}">Hapus</button>
-        </td>
+  refreshKeysBtn.addEventListener('click', loadKeyList);
+
+  async function loadKeyList(){
+    try{
+      const r = await fetch('/api/admin/keys', { headers: { 'x-admin-secret': adminSecret } });
+      const j = await r.json();
+      if (j.ok) renderKeyList(j.keys);
+    }catch(e){}
+  }
+
+  function renderKeyList(keys){
+    if (!keys.length){ adminKeyListBody.innerHTML = `<tr><td colspan="5" class="empty">Belum ada key.</td></tr>`; return; }
+    adminKeyListBody.innerHTML = keys.map(k => `
+      <tr>
+        <td class="filename">${escapeHtml(k.key)}</td>
+        <td>${escapeHtml(k.label || '—')}</td>
+        <td class="empty">${k.expiresAt ? new Date(k.expiresAt).toLocaleDateString('id-ID') : 'tidak pernah'}</td>
+        <td>${k.status === 'active' ? '<span class="status-pill success">Aktif</span>' : '<span class="status-pill error">Expired</span>'}</td>
+        <td><button class="small" data-delkey="${escapeHtml(k.key)}">Hapus</button></td>
       </tr>
     `).join('');
-    downloadBatchBody.querySelectorAll('[data-remove]').forEach(btn => {
-      btn.addEventListener('click', (e) => { items.splice(Number(e.target.dataset.remove), 1); renderDownloadTable(); });
+    adminKeyListBody.querySelectorAll('[data-delkey]').forEach(btn => {
+      btn.addEventListener('click', async (e) => {
+        const key = e.target.dataset.delkey;
+        if (!confirm(`Hapus key ${key}?`)) return;
+        try{
+          const r = await fetch(`/api/admin/keys/${encodeURIComponent(key)}`, { method: 'DELETE', headers: { 'x-admin-secret': adminSecret } });
+          const j = await r.json();
+          if (j.ok) loadKeyList(); else alert(j.error || 'Gagal menghapus.');
+        }catch(err){ alert('Gagal: ' + err.message); }
+      });
     });
   }
-
-  function downloadStatusPill(it){
-    if (it.status === 'pending') return `<span class="status-pill">menunggu</span>`;
-    if (it.status === 'downloading') return `<span class="status-pill uploading">mengambil…</span>`;
-    if (it.status === 'success') return `<span class="status-pill success">✓ ${escapeHtml(it.ext||'')}</span>`;
-    if (it.status === 'error') return `<span class="status-pill error">gagal</span><br><span class="empty">${escapeHtml(it.error||'')}</span>`;
-  }
-
-  downloadAllZipBtn.addEventListener('click', async () => {
-    if (typeof JSZip === 'undefined'){
-      alert('Library ZIP gagal dimuat (cek koneksi internet ke cdnjs.cloudflare.com).');
-      return;
-    }
-    downloadAllZipBtn.disabled = true;
-    const zip = new JSZip();
-    let ok = 0, fail = 0;
-
-    for (let i = 0; i < items.length; i++){
-      const it = items[i];
-      it.status = 'downloading'; renderDownloadTable();
-      try{
-        const res = await fetch(`/api/download-audio?assetId=${encodeURIComponent(it.assetId)}&filename=${encodeURIComponent(it.name)}`);
-        if (!res.ok){
-          const j = await res.json().catch(() => null);
-          throw new Error(j?.error || `HTTP ${res.status}`);
-        }
-        const ext = res.headers.get('X-File-Ext') || 'mp3';
-        const blob = await res.blob();
-        const safeName = it.name.replace(/[^a-zA-Z0-9_\- ]+/g, '_').slice(0, 80) || `Audio_${it.assetId}`;
-        zip.file(`${safeName}.${ext}`, blob);
-        it.status = 'success'; it.ext = ext;
-        ok++;
-      }catch(e){
-        it.status = 'error'; it.error = e.message;
-        fail++;
-      }
-      renderDownloadTable();
-      await new Promise(r => setTimeout(r, 400));
-    }
-
-    downloadAllZipBtn.disabled = false;
-    if (ok > 0){
-      const content = await zip.generateAsync({ type: 'blob' });
-      const a = document.createElement('a');
-      a.href = URL.createObjectURL(content);
-      a.download = 'roblox-audio-download.zip';
-      a.click();
-    }
-    downloadSummary.textContent = `${items.length} item — ${ok} berhasil, ${fail} gagal.`;
-  });
 })();
 </script>
 </body>
