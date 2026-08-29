@@ -360,7 +360,7 @@
       <table class="batch">
         <thead>
           <tr>
-            <th style="width:25%">Key</th>
+            <th style="width:25%">Key ID</th>
             <th style="width:20%">Label</th>
             <th style="width:20%">Expired</th>
             <th style="width:15%">Status</th>
@@ -1433,9 +1433,11 @@ function maskKeyClient(key){
       const j = await r.json();
       if (!j.ok){ newKeyResult.innerHTML = `<div class="notice">${escapeHtml(j.error || 'Gagal membuat key.')}</div>`; return; }
       newKeyResult.innerHTML = `<div class="notice" style="background:var(--good-dim); color:#c9f5df; border-color:#1d6b47;">
-        Key baru: <b style="font-family:var(--mono);">${escapeHtml(j.key)}</b> — ${j.expiresAt ? 'berlaku sampai ' + new Date(j.expiresAt).toLocaleString('id-ID') : 'tidak pernah expired'}.
-        <button class="small" style="margin-left:8px;" onclick="navigator.clipboard.writeText('${j.key}')">Copy</button>
+        Key baru: <b style="font-family:var(--mono); user-select:all;">${escapeHtml(j.key)}</b> — ${j.expiresAt ? 'berlaku sampai ' + new Date(j.expiresAt).toLocaleString('id-ID') : 'tidak pernah expired'}.
+        <button class="small" style="margin-left:8px;" id="copyNewKeyBtn">Copy</button>
+        <br><b>⚠️ Simpan sekarang</b> — server cuma menyimpan hash-nya, key ini tidak bisa ditampilkan ulang setelah kamu pindah halaman.
       </div>`;
+      document.getElementById('copyNewKeyBtn').addEventListener('click', () => navigator.clipboard.writeText(j.key));
       newKeyLabel.value = '';
       loadKeyList();
     }catch(e){
@@ -1458,19 +1460,19 @@ function maskKeyClient(key){
     if (!keys.length){ adminKeyListBody.innerHTML = `<tr><td colspan="5" class="empty">Belum ada key.</td></tr>`; return; }
     adminKeyListBody.innerHTML = keys.map(k => `
       <tr>
-        <td class="filename">${escapeHtml(k.key)}</td>
+        <td class="filename" title="${escapeHtml(k.id)}">${escapeHtml(k.id.slice(0, 10))}…</td>
         <td>${escapeHtml(k.label || '—')}</td>
         <td class="empty">${k.expiresAt ? new Date(k.expiresAt).toLocaleDateString('id-ID') : 'tidak pernah'}</td>
         <td>${k.status === 'active' ? '<span class="status-pill success">Aktif</span>' : '<span class="status-pill error">Expired</span>'}</td>
-        <td><button class="small" data-delkey="${escapeHtml(k.key)}">Hapus</button></td>
+        <td><button class="small" data-delkey="${escapeHtml(k.id)}">Hapus</button></td>
       </tr>
     `).join('');
     adminKeyListBody.querySelectorAll('[data-delkey]').forEach(btn => {
       btn.addEventListener('click', async (e) => {
-        const key = e.target.dataset.delkey;
-        if (!confirm(`Hapus key ${key}?`)) return;
+        const id = e.target.dataset.delkey;
+        if (!confirm(`Hapus key ini? (label: cek tabel)`)) return;
         try{
-          const r = await fetch(`/api/admin/keys/${encodeURIComponent(key)}`, { method: 'DELETE', headers: { 'x-admin-secret': adminSecret } });
+          const r = await fetch(`/api/admin/keys/${encodeURIComponent(id)}`, { method: 'DELETE', headers: { 'x-admin-secret': adminSecret } });
           const j = await r.json();
           if (j.ok) loadKeyList(); else alert(j.error || 'Gagal menghapus.');
         }catch(err){ alert('Gagal: ' + err.message); }
