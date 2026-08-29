@@ -9,6 +9,19 @@ const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 20 
 
 const PORT = process.env.PORT || 3000;
 
+// Railway (dan kebanyakan platform PaaS) menaruh app di belakang reverse proxy —
+// tanpa ini, req.ip akan selalu jadi IP proxy internal, bukan IP asli pengunjung,
+// dan rate limiting di bawah jadi tidak berguna (semua orang dianggap 1 IP).
+app.set('trust proxy', 1);
+
+// Header keamanan dasar untuk semua response.
+app.use((req, res, next) => {
+  res.setHeader('X-Content-Type-Options', 'nosniff');
+  res.setHeader('X-Frame-Options', 'DENY');
+  res.setHeader('Referrer-Policy', 'no-referrer');
+  next();
+});
+
 // PENTING: kredensial Roblox (API key/User ID) TIDAK disimpan di server — itu tersimpan
 // per-browser lewat localStorage (lihat public/index.html) supaya banyak orang bisa
 // pakai website ini bersamaan tanpa saling menimpa pengaturan.
@@ -20,8 +33,41 @@ function resolveUserId(req) {
 }
 
 // ---------------------------------------------------------------------------
-// Access Key store — INI yang disimpan di server, karena sifatnya memang daftar
-// pusat yang dikelola 1 admin untuk membatasi siapa saja yang boleh pakai tool ini.
+// Rate limiting sederhana (in-memory) untuk endpoint yang menerima "tebakan"
+// credential (login access key, unlock admin) — mencegah brute-force kasar.
+// Cukup untuk skala personal/kecil; di-reset otomatis per window.
+// ---------------------------------------------------------------------------
+const rateBuckets = new Map();
+function rateLimit({ windowMs, max }) {
+  return (req, res, next) => {
+    const id = req.ip || 'unknown';
+    const now = Date.now();
+    const bucket = rateBuckets.get(id) || { count: 0, start: now };
+    if (now - bucket.start > windowMs) { bucket.count = 0; bucket.start = now; }
+    bucket.count++;
+    rateBuckets.set(id, bucket);
+    if (bucket.count > max) {
+      const retrySec = Math.ceil((windowMs - (now - bucket.start)) / 1000);
+      return res.status(429).json({ ok: false, error: `Terlalu banyak percobaan. Coba lagi dalam ~${retrySec} detik.` });
+    }
+    next();
+  };
+}
+setInterval(() => {
+  const now = Date.now();
+  for (const [id, bucket] of rateBuckets) {
+    if (now - bucket.start > 30 * 60 * 1000) rateBuckets.delete(id);
+  }
+}, 10 * 60 * 1000).unref();
+
+const authRateLimit = rateLimit({ windowMs: 5 * 60 * 1000, max: 15 }); // 15 percobaan / 5 menit / IP — buat login & admin
+const apiRateLimit = rateLimit({ windowMs: 60 * 1000, max: 60 }); // 60 request/menit/IP — cukup longgar untuk bulk upload wajar, tapi membatasi penyalahgunaan/brute-force lewat endpoint ini
+
+// ---------------------------------------------------------------------------
+// Access Key store — INI yang disimpan di server (daftar terpusat dikelola 1
+// admin). Key disimpan sebagai HASH SHA-256, bukan plaintext — kalau file
+// keys.json ini bocor/ke-commit tidak sengaja, key aslinya tetap tidak
+// terpakai (satu arah, tidak bisa dibalik ke plaintext).
 // ---------------------------------------------------------------------------
 const DATA_DIR = process.env.DATA_DIR || path.join(__dirname, 'data');
 const KEYS_PATH = path.join(DATA_DIR, 'keys.json');
@@ -39,19 +85,37 @@ function saveKeys(keys) {
   fs.writeFileSync(KEYS_PATH, JSON.stringify(keys, null, 2), 'utf-8');
 }
 function genKey() {
-  return 'RBXT-' + crypto.randomBytes(9).toString('base64url').toUpperCase();
+  return 'RBXT-' + crypto.randomBytes(16).toString('base64url');
+}
+function hashKey(rawKey) {
+  return crypto.createHash('sha256').update(String(rawKey)).digest('hex');
 }
 function keyStatus(entry) {
   if (!entry) return 'not_found';
   if (entry.expiresAt && Date.now() > entry.expiresAt) return 'expired';
   return 'active';
 }
+// Perbandingan tahan-timing-attack: string compare biasa (===) bisa balik lebih
+// lambat/cepat tergantung berapa banyak karakter awal yang cocok, dan itu bisa
+// dipakai untuk menebak secret karakter-per-karakter. timingSafeEqual selalu
+// makan waktu sama berapa pun banyak yang cocok.
+function safeStringEqual(a, b) {
+  const bufA = Buffer.from(String(a));
+  const bufB = Buffer.from(String(b));
+  if (bufA.length !== bufB.length) {
+    // Tetap panggil timingSafeEqual (dengan buffer dummy sepanjang bufA) supaya
+    // durasi respons untuk "panjang salah" tidak beda jauh dari "isi salah".
+    crypto.timingSafeEqual(bufA, bufA);
+    return false;
+  }
+  return crypto.timingSafeEqual(bufA, bufB);
+}
 
 function requireAccessKey(req, res, next) {
-  const key = req.header('x-access-key') || req.body.accessKey || req.query.accessKey;
-  if (!key) return res.status(401).json({ ok: false, error: 'Access key belum diisi. Masukkan key di halaman login.' });
+  const rawKey = req.header('x-access-key') || req.body.accessKey || req.query.accessKey;
+  if (!rawKey) return res.status(401).json({ ok: false, error: 'Access key belum diisi. Masukkan key di halaman login.' });
   const keys = loadKeys();
-  const entry = keys[key];
+  const entry = keys[hashKey(rawKey)];
   const status = keyStatus(entry);
   if (status === 'not_found') return res.status(401).json({ ok: false, error: 'Access key tidak valid.' });
   if (status === 'expired') return res.status(401).json({ ok: false, error: 'Access key sudah expired. Minta key baru ke admin.' });
@@ -60,10 +124,10 @@ function requireAccessKey(req, res, next) {
 
 function requireAdmin(req, res, next) {
   if (!ADMIN_SECRET) {
-    return res.status(503).json({ ok: false, error: 'ADMIN_SECRET belum di-set di environment server. Set dulu supaya panel admin bisa dipakai.' });
+    return res.status(503).json({ ok: false, error: 'ADMIN_SECRET belum di-set di environment server (Railway -> Variables). Set dulu supaya panel admin bisa dipakai.' });
   }
-  const secret = req.header('x-admin-secret') || req.body.adminSecret || req.query.adminSecret;
-  if (secret !== ADMIN_SECRET) {
+  const secret = req.header('x-admin-secret') || req.body.adminSecret || req.query.adminSecret || '';
+  if (!safeStringEqual(secret, ADMIN_SECRET)) {
     return res.status(401).json({ ok: false, error: 'Admin secret salah.' });
   }
   next();
@@ -75,21 +139,21 @@ app.use(express.json());
 // ---------------------------------------------------------------------------
 // Access key: verifikasi (dipanggil frontend saat login) + admin create/list/delete
 // ---------------------------------------------------------------------------
-app.get('/api/verify-key', (req, res) => {
-  const key = req.header('x-access-key') || req.query.key;
-  if (!key) return res.status(400).json({ ok: false, error: 'Key kosong.' });
+app.get('/api/verify-key', authRateLimit, (req, res) => {
+  const rawKey = req.header('x-access-key') || req.query.key;
+  if (!rawKey) return res.status(400).json({ ok: false, error: 'Key kosong.' });
   const keys = loadKeys();
-  const entry = keys[key];
+  const entry = keys[hashKey(rawKey)];
   const status = keyStatus(entry);
   if (status === 'not_found') return res.status(401).json({ ok: false, error: 'Access key tidak valid.' });
   if (status === 'expired') return res.status(401).json({ ok: false, error: 'Access key sudah expired.' });
   res.json({ ok: true, label: entry.label || '', expiresAt: entry.expiresAt || null });
 });
 
-app.get('/api/admin/keys', requireAdmin, (req, res) => {
+app.get('/api/admin/keys', authRateLimit, requireAdmin, (req, res) => {
   const keys = loadKeys();
-  const list = Object.entries(keys).map(([key, entry]) => ({
-    key,
+  const list = Object.entries(keys).map(([id, entry]) => ({
+    id,
     label: entry.label || '',
     createdAt: entry.createdAt,
     expiresAt: entry.expiresAt || null,
@@ -98,22 +162,25 @@ app.get('/api/admin/keys', requireAdmin, (req, res) => {
   res.json({ ok: true, keys: list });
 });
 
-app.post('/api/admin/keys', requireAdmin, (req, res) => {
+app.post('/api/admin/keys', authRateLimit, requireAdmin, (req, res) => {
   const label = String(req.body.label || '').slice(0, 80);
   const expiresInDays = Number(req.body.expiresInDays);
   const keys = loadKeys();
-  const key = genKey();
+  const rawKey = genKey();
+  const id = hashKey(rawKey);
   const createdAt = Date.now();
   const expiresAt = expiresInDays > 0 ? createdAt + expiresInDays * 24 * 60 * 60 * 1000 : null;
-  keys[key] = { label, createdAt, expiresAt };
+  keys[id] = { label, createdAt, expiresAt };
   saveKeys(keys);
-  res.json({ ok: true, key, label, createdAt, expiresAt });
+  // rawKey HANYA dikirim sekali di sini, saat pembuatan — tidak pernah disimpan
+  // atau bisa diambil lagi setelah ini (yang tersimpan cuma hash-nya).
+  res.json({ ok: true, key: rawKey, id, label, createdAt, expiresAt });
 });
 
-app.delete('/api/admin/keys/:key', requireAdmin, (req, res) => {
+app.delete('/api/admin/keys/:id', authRateLimit, requireAdmin, (req, res) => {
   const keys = loadKeys();
-  if (!keys[req.params.key]) return res.status(404).json({ ok: false, error: 'Key tidak ditemukan.' });
-  delete keys[req.params.key];
+  if (!keys[req.params.id]) return res.status(404).json({ ok: false, error: 'Key tidak ditemukan.' });
+  delete keys[req.params.id];
   saveKeys(keys);
   res.json({ ok: true });
 });
@@ -124,7 +191,7 @@ app.delete('/api/admin/keys/:key', requireAdmin, (req, res) => {
 // ---------------------------------------------------------------------------
 const QUALIFYING_ROLE_PATTERN = /owner|admin|developer/i;
 
-app.get('/api/groups', requireAccessKey, async (req, res) => {
+app.get('/api/groups', apiRateLimit, requireAccessKey, async (req, res) => {
   const userId = req.query.userId;
   if (!userId) {
     return res.status(400).json({ ok: false, error: 'userId belum diisi.' });
@@ -173,7 +240,7 @@ const EXT_CONFIG = {
   '.flac': { assetType: 'Audio', mime: 'audio/flac' },
 };
 
-app.post('/api/upload', requireAccessKey, upload.single('file'), async (req, res) => {
+app.post('/api/upload', apiRateLimit, requireAccessKey, upload.single('file'), async (req, res) => {
   try {
     const apiKey = resolveApiKey(req);
     if (!apiKey) {
