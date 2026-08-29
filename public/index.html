@@ -247,6 +247,16 @@
         <tbody id="finalSummaryBody"></tbody>
       </table>
     </div>
+
+    <div class="card" id="updateConfigCard" style="margin-top:14px; display:none;">
+      <h2>Update Config Lama dengan Asset ID Baru</h2>
+      <p class="empty" style="margin:0 0 10px;">Tempel isi module/config lama kamu (boleh berisi banyak tabel/kategori, boleh ada komentar) — pasangan <code>{ "NAMA", ID }</code> yang nama-nya cocok dengan hasil upload di atas otomatis diganti ID-nya, sisanya dibiarkan utuh.</p>
+      <textarea id="updateConfigInput" rows="8" style="width:100%; background:var(--panel-2); border:1px solid var(--line); color:var(--text); border-radius:8px; padding:10px 12px; font-family:var(--mono); font-size:12.5px; resize:vertical;" placeholder='tempel config Lua lama di sini...'></textarea>
+      <div class="toolbar" style="margin-top:10px;">
+        <button class="btn" id="updateConfigBtn">Update ID & Download</button>
+      </div>
+      <div id="updateConfigResult"></div>
+    </div>
   </div>
 
   <!-- ============ TAB 3: UPLOAD AUDIO ============ -->
@@ -312,6 +322,16 @@
         </thead>
         <tbody id="finalSummaryBodyAudio"></tbody>
       </table>
+    </div>
+
+    <div class="card" id="updateConfigCardAudio" style="margin-top:14px; display:none;">
+      <h2>Update Config Lama dengan Asset ID Baru</h2>
+      <p class="empty" style="margin:0 0 10px;">Tempel isi module/config lama kamu — pasangan <code>{ "NAMA", ID }</code> yang nama-nya cocok dengan hasil upload di atas otomatis diganti ID-nya, sisanya dibiarkan utuh.</p>
+      <textarea id="updateConfigInputAudio" rows="8" style="width:100%; background:var(--panel-2); border:1px solid var(--line); color:var(--text); border-radius:8px; padding:10px 12px; font-family:var(--mono); font-size:12.5px; resize:vertical;" placeholder='tempel config Lua lama di sini...'></textarea>
+      <div class="toolbar" style="margin-top:10px;">
+        <button class="btn" id="updateConfigBtnAudio">Update ID & Download</button>
+      </div>
+      <div id="updateConfigResultAudio"></div>
     </div>
   </div>
 
@@ -431,6 +451,34 @@ function downloadTextFile(filename, text, mime){
   a.href = URL.createObjectURL(blob);
   a.download = filename;
   a.click();
+}
+
+// Cari tiap pasangan { "NAMA", ANGKA } di teks config lama (module Lua/dsb),
+// dan ganti ANGKA-nya kalau NAMA cocok (case-insensitive) dengan salah satu
+// hasil upload yang sukses. Format/spasi/komentar lain di file dibiarkan utuh
+// — cuma digit ID yang diganti, di tempatnya masing-masing.
+function updateIdsInText(text, successRows){
+  const map = new Map();
+  successRows.forEach(r => map.set(String(r.name).trim().toLowerCase(), r.assetId));
+  const matched = new Set();
+
+  const newText = text.replace(
+    /(\{\s*"((?:[^"\\]|\\.)*)"\s*,\s*)(\d+)(\s*\})/g,
+    (whole, pre, name, oldId, post) => {
+      const key = name.trim().toLowerCase();
+      if (map.has(key)){
+        matched.add(key);
+        return pre + map.get(key) + post;
+      }
+      return whole;
+    }
+  );
+
+  const notFoundInConfig = successRows
+    .map(r => r.name)
+    .filter(name => !matched.has(String(name).trim().toLowerCase()));
+
+  return { newText, updatedCount: matched.size, notFoundInConfig };
 }
 
 /* ================================================================ */
@@ -796,6 +844,11 @@ function maskKeyClient(key){
   const luaTableName = document.getElementById('luaTableName');
   const downloadLuaBtn = document.getElementById('downloadLuaBtn');
 
+  const updateConfigCard = document.getElementById('updateConfigCard');
+  const updateConfigInput = document.getElementById('updateConfigInput');
+  const updateConfigBtn = document.getElementById('updateConfigBtn');
+  const updateConfigResult = document.getElementById('updateConfigResult');
+
   let rows = []; // {file, name, description, status, assetId, url, error}
 
   /* ---------- Opsi A: auto-split 1 file gabungan (.rbxmx) ---------- */
@@ -1017,9 +1070,11 @@ function maskKeyClient(key){
   function renderFinalSummary(){
     if (!rows.length || rows.some(r => r.status === 'uploading' || r.status === 'pending')){
       finalSummaryCard.style.display = 'none';
+      updateConfigCard.style.display = 'none';
       return;
     }
     finalSummaryCard.style.display = '';
+    updateConfigCard.style.display = '';
     finalSummaryBody.innerHTML = rows.map(r => `
       <tr>
         <td>${escapeHtml(r.name)}<br><span class="empty">${escapeHtml(r.file.name)}</span></td>
@@ -1029,6 +1084,22 @@ function maskKeyClient(key){
       </tr>
     `).join('');
   }
+
+  updateConfigBtn.addEventListener('click', () => {
+    const text = updateConfigInput.value;
+    if (!text.trim()){ alert('Tempel config lama dulu.'); return; }
+    const successRows = rows.filter(r => r.status === 'success' && r.assetId);
+    if (!successRows.length){ alert('Belum ada animasi yang sukses diupload.'); return; }
+    const { newText, updatedCount, notFoundInConfig } = updateIdsInText(text, successRows);
+    if (updatedCount === 0){
+      updateConfigResult.innerHTML = `<div class="notice">Tidak ada nama di config ini yang cocok dengan hasil upload — pastikan nama animasi di config sama persis dengan Display Name yang dipakai saat upload.</div>`;
+      return;
+    }
+    downloadTextFile('config-updated.lua', newText, 'text/plain');
+    updateConfigResult.innerHTML = `<div class="notice" style="background:var(--good-dim); color:#c9f5df; border-color:#1d6b47;">
+      ${updatedCount} ID berhasil diupdate di config.${notFoundInConfig.length ? '<br>Tidak ketemu di config (perlu ditambah manual): ' + notFoundInConfig.map(escapeHtml).join(', ') : ''}
+    </div>`;
+  });
 
   downloadCsvBtn.addEventListener('click', () => {
     const header = 'name,filename,assetId,status,moderationState,url,error\n';
@@ -1115,6 +1186,11 @@ function maskKeyClient(key){
   const copySummaryBtnAudio = document.getElementById('copySummaryBtnAudio');
   const luaTableNameAudio = document.getElementById('luaTableNameAudio');
   const downloadLuaBtnAudio = document.getElementById('downloadLuaBtnAudio');
+
+  const updateConfigCardAudio = document.getElementById('updateConfigCardAudio');
+  const updateConfigInputAudio = document.getElementById('updateConfigInputAudio');
+  const updateConfigBtnAudio = document.getElementById('updateConfigBtnAudio');
+  const updateConfigResultAudio = document.getElementById('updateConfigResultAudio');
 
   // Field-field ini shared dengan tab Animasi (sudah dideklarasikan & diisi di sana)
   const namePrefix = document.getElementById('namePrefix');
@@ -1280,9 +1356,11 @@ function maskKeyClient(key){
   function renderFinalSummary(){
     if (!rows.length || rows.some(r => r.status === 'uploading' || r.status === 'pending')){
       finalSummaryCardAudio.style.display = 'none';
+      updateConfigCardAudio.style.display = 'none';
       return;
     }
     finalSummaryCardAudio.style.display = '';
+    updateConfigCardAudio.style.display = '';
     finalSummaryBodyAudio.innerHTML = rows.map(r => `
       <tr>
         <td>${escapeHtml(r.name)}<br><span class="empty">${escapeHtml(r.file.name)}</span></td>
@@ -1292,6 +1370,22 @@ function maskKeyClient(key){
       </tr>
     `).join('');
   }
+
+  updateConfigBtnAudio.addEventListener('click', () => {
+    const text = updateConfigInputAudio.value;
+    if (!text.trim()){ alert('Tempel config lama dulu.'); return; }
+    const successRows = rows.filter(r => r.status === 'success' && r.assetId);
+    if (!successRows.length){ alert('Belum ada audio yang sukses diupload.'); return; }
+    const { newText, updatedCount, notFoundInConfig } = updateIdsInText(text, successRows);
+    if (updatedCount === 0){
+      updateConfigResultAudio.innerHTML = `<div class="notice">Tidak ada nama di config ini yang cocok dengan hasil upload — pastikan nama audio di config sama persis dengan Display Name yang dipakai saat upload.</div>`;
+      return;
+    }
+    downloadTextFile('config-updated.lua', newText, 'text/plain');
+    updateConfigResultAudio.innerHTML = `<div class="notice" style="background:var(--good-dim); color:#c9f5df; border-color:#1d6b47;">
+      ${updatedCount} ID berhasil diupdate di config.${notFoundInConfig.length ? '<br>Tidak ketemu di config (perlu ditambah manual): ' + notFoundInConfig.map(escapeHtml).join(', ') : ''}
+    </div>`;
+  });
 
   downloadCsvBtnAudio.addEventListener('click', () => {
     const header = 'name,filename,assetId,status,moderationState,url,error\n';
