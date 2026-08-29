@@ -1,0 +1,10 @@
+# JANGAN commit file ini — berisi secret asli (ADMIN_SECRET, API key, dst).
+# Set env variable lewat Railway Dashboard -> Variables, bukan lewat file ini.
+.env
+
+node_modules/
+
+# Data runtime (daftar access key). Kalau pakai Railway Volume, ini
+# ada di path DATA_DIR (mis. /data), bukan di dalam folder project ini,
+# jadi baris ini murni jaga-jaga untuk development lokal.
+data/
