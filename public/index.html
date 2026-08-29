@@ -384,6 +384,7 @@
     <input id="gateKeyInput" type="text" placeholder="RBXT-XXXXXXXXXXXX" style="width:100%; background:var(--panel-2); border:1px solid var(--line); color:var(--text); border-radius:8px; padding:10px 12px; font-family:var(--mono); font-size:13px; margin-bottom:10px;">
     <button class="btn" id="gateSubmitBtn" style="width:100%;">Masuk</button>
     <div id="gateNote" class="empty" style="margin-top:10px;"></div>
+    <button class="btn ghost small" id="gateAdminBtn" style="width:100%; margin-top:14px;">Saya Admin — belum punya Access Key</button>
   </div>
 </div>
 
@@ -1330,6 +1331,7 @@ function maskKeyClient(key){
   const gateKeyInput = document.getElementById('gateKeyInput');
   const gateSubmitBtn = document.getElementById('gateSubmitBtn');
   const gateNote = document.getElementById('gateNote');
+  const gateAdminBtn = document.getElementById('gateAdminBtn');
 
   window.getAccessKey = function(){ return localStorage.getItem(LS_ACCESS_KEY) || ''; };
 
@@ -1361,6 +1363,19 @@ function maskKeyClient(key){
     tryUnlock(key);
   });
   gateKeyInput.addEventListener('keydown', (e) => { if (e.key === 'Enter') gateSubmitBtn.click(); });
+
+  // Jalan pintas buat admin yang belum punya Access Key sama sekali (mis. setup
+  // pertama kali). Ini cuma menyingkirkan overlay & pindah ke tab Admin — aksi
+  // sensitif (upload, lihat grup, buat/hapus key) tetap dicek server pakai
+  // Access Key / Admin Secret masing-masing, jadi tombol ini tidak membuka celah.
+  gateAdminBtn.addEventListener('click', () => {
+    accessGate.style.display = 'none';
+    document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+    document.querySelectorAll('.tab-panel').forEach(p => p.classList.remove('active'));
+    document.querySelector('.tab-btn[data-tab="admin"]').classList.add('active');
+    document.getElementById('panel-admin').classList.add('active');
+    document.getElementById('sharedConfig').style.display = 'none';
+  });
 
   const saved = window.getAccessKey();
   if (saved){ tryUnlock(saved); }
