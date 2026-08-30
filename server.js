@@ -60,8 +60,7 @@ setInterval(() => {
   }
 }, 10 * 60 * 1000).unref();
 
-const authRateLimit = rateLimit({ windowMs: 5 * 60 * 1000, max: 15 }); // 15 percobaan / 5 menit / IP — buat login & admin
-const apiRateLimit = rateLimit({ windowMs: 60 * 1000, max: 60 }); // 60 request/menit/IP — cukup longgar untuk bulk upload wajar, tapi membatasi penyalahgunaan/brute-force lewat endpoint ini
+const authRateLimit = rateLimit({ windowMs: 5 * 60 * 1000, max: 15 }); // 15 percobaan / 5 menit / IP — buat login & admin (cegah tebak-tebak password/key), TIDAK dipasang di upload/groups supaya bulk upload tidak kehambat
 
 // ---------------------------------------------------------------------------
 // Access Key store — INI yang disimpan di server (daftar terpusat dikelola 1
@@ -191,7 +190,7 @@ app.delete('/api/admin/keys/:id', authRateLimit, requireAdmin, (req, res) => {
 // ---------------------------------------------------------------------------
 const QUALIFYING_ROLE_PATTERN = /owner|admin|developer/i;
 
-app.get('/api/groups', apiRateLimit, requireAccessKey, async (req, res) => {
+app.get('/api/groups', requireAccessKey, async (req, res) => {
   const userId = req.query.userId;
   if (!userId) {
     return res.status(400).json({ ok: false, error: 'userId belum diisi.' });
@@ -240,7 +239,7 @@ const EXT_CONFIG = {
   '.flac': { assetType: 'Audio', mime: 'audio/flac' },
 };
 
-app.post('/api/upload', apiRateLimit, requireAccessKey, upload.single('file'), async (req, res) => {
+app.post('/api/upload', requireAccessKey, upload.single('file'), async (req, res) => {
   try {
     const apiKey = resolveApiKey(req);
     if (!apiKey) {
