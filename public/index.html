@@ -6,50 +6,57 @@
 <title>Roblox Tools — Inspector &amp; Bulk Uploader</title>
 <style>
   :root{
-    --bg:#0f1115; --panel:#161922; --panel-2:#1d212c; --line:#2a2f3d; --grid:#191d27;
-    --text:#e7e9ee; --dim:#8b93a7; --accent:#ff4d4f; --accent-dim:#5c2325;
-    --good:#3ecf8e; --good-dim:#123a2c; --warn:#e8b33d; --warn-dim:#3a2f10;
+    --bg:#0d0e12; --panel:#15171d; --panel-2:#1c1f27; --line:#262a34;
+    --text:#eef0f4; --dim:#8a90a0; --accent:#5b8cff; --accent-soft:#1c2440;
+    --good:#34d399; --good-soft:#0f2a22; --warn:#f2b94c; --warn-soft:#2e2410;
+    --danger:#f26d6d; --danger-soft:#331b1e;
+    --radius:14px; --radius-sm:9px;
     --mono: ui-monospace, "SF Mono", "Cascadia Mono", "JetBrains Mono", Consolas, monospace;
     --sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Inter, sans-serif;
   }
   *{box-sizing:border-box;}
   body{
     margin:0; min-height:100vh;
-    background:
-      linear-gradient(var(--grid) 1px, transparent 1px) 0 0/28px 28px,
-      linear-gradient(90deg, var(--grid) 1px, transparent 1px) 0 0/28px 28px,
-      var(--bg);
+    background:var(--bg);
     color:var(--text); font-family:var(--sans);
+    -webkit-font-smoothing:antialiased;
   }
-  .wrap{max-width:1040px;margin:0 auto;padding:32px 20px 60px;}
-  .eyebrow{font-family:var(--mono); font-size:12px; letter-spacing:.14em; text-transform:uppercase; color:var(--accent); margin:0 0 8px;}
-  h1{margin:0 0 6px;font-size:26px;font-weight:700;}
-  p.sub{margin:0 0 22px;color:var(--dim);font-size:14px;max-width:680px;line-height:1.5;}
+  .wrap{max-width:960px;margin:0 auto;padding:40px 20px 64px;}
+  .eyebrow{font-family:var(--mono); font-size:11px; letter-spacing:.12em; text-transform:uppercase; color:var(--accent); margin:0 0 6px;}
+  h1{margin:0 0 8px;font-size:24px;font-weight:700;letter-spacing:-.01em;}
+  h2{font-weight:600;}
+  p.sub{margin:0 0 28px;color:var(--dim);font-size:14px;max-width:640px;line-height:1.55;}
 
-  .tabs{display:flex; gap:6px; margin-bottom:20px; border-bottom:1px solid var(--line);}
-  .tab-btn{
-    font-family:var(--mono); font-size:13px; background:none; border:none; color:var(--dim);
-    padding:10px 18px; cursor:pointer; border-bottom:2px solid transparent; margin-bottom:-1px;
+  .tabs{
+    display:flex; gap:2px; margin-bottom:24px; padding:4px;
+    background:var(--panel); border-radius:var(--radius-sm); width:fit-content; max-width:100%;
+    overflow-x:auto;
   }
-  .tab-btn.active{color:var(--text); border-bottom-color:var(--accent);}
+  .tab-btn{
+    font-family:var(--sans); font-weight:600; font-size:13px; background:none; border:none; color:var(--dim);
+    padding:8px 16px; cursor:pointer; border-radius:7px; white-space:nowrap; transition:background .15s, color .15s;
+  }
+  .tab-btn:hover{color:var(--text);}
+  .tab-btn.active{color:var(--text); background:var(--panel-2);}
   .tab-panel{display:none;}
   .tab-panel.active{display:block;}
 
-  .card{background:var(--panel); border:1px solid var(--line); border-radius:10px; padding:16px 18px;}
-  .card h2{font-size:11px; text-transform:uppercase; letter-spacing:.1em; color:var(--dim); margin:0 0 12px; font-family:var(--mono);}
-  .grid{display:grid; grid-template-columns:300px 1fr; gap:16px; margin-top:20px;}
+  .card{background:var(--panel); border:1px solid var(--line); border-radius:var(--radius); padding:20px 22px;}
+  .card h2{font-size:14px; color:var(--text); margin:0 0 14px; font-family:var(--sans); letter-spacing:0;}
+  .grid{display:grid; grid-template-columns:280px 1fr; gap:14px; margin-top:20px;}
   @media (max-width:780px){ .grid{grid-template-columns:1fr;} }
 
-  .kv{display:flex; justify-content:space-between; gap:10px; font-size:13px; padding:5px 0; border-bottom:1px dashed var(--line);}
+  .kv{display:flex; justify-content:space-between; gap:10px; font-size:13px; padding:6px 0; border-bottom:1px solid var(--line);}
   .kv:last-child{border-bottom:none;}
   .kv span:first-child{color:var(--dim);}
   .kv span:last-child{font-family:var(--mono); text-align:right;}
-  .badge{display:inline-block; font-family:var(--mono); font-size:11px; padding:2px 8px; border-radius:20px; border:1px solid var(--line); color:var(--dim);}
-  .badge.xml{color:var(--good); border-color:var(--good);}
-  .badge.bin{color:var(--warn); border-color:var(--warn);}
+  .badge{display:inline-block; font-family:var(--mono); font-size:11px; padding:2px 9px; border-radius:20px; background:var(--panel-2); color:var(--dim);}
+  .badge.xml{color:var(--good); background:var(--good-soft);}
+  .badge.bin{color:var(--warn); background:var(--warn-soft);}
 
-  .drop{margin-top:6px; border:1.5px dashed var(--line); border-radius:10px; background:var(--panel); padding:34px 20px; text-align:center; cursor:pointer; transition:border-color .15s, background .15s;}
-  .drop.drag{border-color:var(--accent); background:var(--panel-2);}
+  .drop{margin-top:6px; border:1.5px dashed var(--line); border-radius:var(--radius); background:var(--panel-2); padding:36px 20px; text-align:center; cursor:pointer; transition:border-color .15s, background .15s;}
+  .drop:hover{border-color:var(--accent);}
+  .drop.drag{border-color:var(--accent); background:var(--accent-soft);}
   .drop .hint{color:var(--dim); font-size:13px; margin-top:6px;}
   input[type=file]{display:none;}
 
@@ -60,40 +67,42 @@
   .toggle{display:inline-block;width:14px;color:var(--dim);}
   .children{margin-left:16px; border-left:1px solid var(--line); padding-left:8px;}
   .props{font-family:var(--mono); font-size:12.5px; margin-top:6px;}
-  .empty{color:var(--dim); font-size:13px; font-family:var(--mono);}
-  .notice{margin-top:14px; padding:10px 12px; border-radius:8px; font-size:12.5px; line-height:1.6; background:var(--accent-dim); color:#ffd7d8; border:1px solid #7a2c2e;}
-  .notice.info{background:var(--warn-dim); color:#ffe9b8; border-color:#6b5518;}
-  .toolbar{display:flex; gap:8px; margin-bottom:12px; flex-wrap:wrap;}
-  button.small{font-family:var(--mono); font-size:11px; background:var(--panel-2); color:var(--text); border:1px solid var(--line); border-radius:6px; padding:5px 10px; cursor:pointer;}
+  .empty{color:var(--dim); font-size:13px;}
+  .notice{margin-top:14px; padding:12px 14px; border-radius:var(--radius-sm); font-size:13px; line-height:1.6; background:var(--danger-soft); color:#ffd7d8;}
+  .notice.info{background:var(--warn-soft); color:#ffe9b8;}
+  .toolbar{display:flex; gap:8px; margin-bottom:12px; flex-wrap:wrap; align-items:center;}
+  button.small{font-family:var(--sans); font-weight:600; font-size:12px; background:var(--panel-2); color:var(--text); border:1px solid var(--line); border-radius:7px; padding:6px 12px; cursor:pointer; transition:border-color .15s;}
   button.small:hover{border-color:var(--accent);}
 
   /* bulk upload */
   .field-row{display:flex; gap:12px; flex-wrap:wrap; margin-bottom:14px;}
-  .field{display:flex; flex-direction:column; gap:5px; font-size:12px; color:var(--dim); font-family:var(--mono);}
+  .field{display:flex; flex-direction:column; gap:6px; font-size:12px; color:var(--dim); font-weight:600;}
   .field input, .field select{
-    background:var(--panel-2); border:1px solid var(--line); color:var(--text); border-radius:6px;
-    padding:7px 9px; font-family:var(--sans); font-size:13px; min-width:180px;
+    background:var(--panel-2); border:1px solid var(--line); color:var(--text); border-radius:8px;
+    padding:8px 10px; font-family:var(--sans); font-size:13px; min-width:180px;
   }
+  .field input:focus, .field select:focus{outline:none; border-color:var(--accent);}
   .btn{
-    font-family:var(--mono); font-size:13px; background:var(--accent); color:#fff; border:none;
-    border-radius:8px; padding:9px 18px; cursor:pointer; font-weight:600;
+    font-family:var(--sans); font-size:13px; background:var(--accent); color:#fff; border:none;
+    border-radius:9px; padding:10px 20px; cursor:pointer; font-weight:600; transition:opacity .15s, filter .15s;
   }
+  .btn:hover{filter:brightness(1.08);}
   .btn:disabled{opacity:.5; cursor:not-allowed;}
-  .btn.ghost{background:var(--panel-2); color:var(--text); border:1px solid var(--line); font-weight:400;}
+  .btn.ghost{background:var(--panel-2); color:var(--text); border:1px solid var(--line); font-weight:600;}
 
   table.batch{width:100%; border-collapse:collapse; font-size:13px; margin-top:14px;}
-  table.batch th{text-align:left; font-family:var(--mono); font-size:11px; text-transform:uppercase; color:var(--dim); padding:8px 6px; border-bottom:1px solid var(--line);}
-  table.batch td{padding:7px 6px; border-bottom:1px solid var(--line); vertical-align:middle;}
-  table.batch input{width:100%; background:var(--panel-2); border:1px solid var(--line); color:var(--text); border-radius:5px; padding:5px 7px; font-size:12.5px;}
-  .status-pill{font-family:var(--mono); font-size:11px; padding:3px 8px; border-radius:20px; border:1px solid var(--line); color:var(--dim); white-space:nowrap;}
-  .status-pill.uploading{color:var(--warn); border-color:var(--warn);}
-  .status-pill.success{color:var(--good); border-color:var(--good);}
-  .status-pill.error{color:var(--accent); border-color:var(--accent);}
+  table.batch th{text-align:left; font-family:var(--sans); font-weight:600; font-size:11px; text-transform:uppercase; letter-spacing:.04em; color:var(--dim); padding:8px 6px; border-bottom:1px solid var(--line);}
+  table.batch td{padding:9px 6px; border-bottom:1px solid var(--line); vertical-align:middle;}
+  table.batch input{width:100%; background:var(--panel-2); border:1px solid var(--line); color:var(--text); border-radius:6px; padding:6px 8px; font-size:12.5px;}
+  .status-pill{font-family:var(--sans); font-weight:600; font-size:11px; padding:3px 9px; border-radius:20px; background:var(--panel-2); color:var(--dim); white-space:nowrap;}
+  .status-pill.uploading{color:var(--warn); background:var(--warn-soft);}
+  .status-pill.success{color:var(--good); background:var(--good-soft);}
+  .status-pill.error{color:var(--danger); background:var(--danger-soft);}
   .filename{font-family:var(--mono); font-size:12px; color:var(--dim);}
-  .link{color:var(--good); text-decoration:none;}
+  .link{color:var(--accent); text-decoration:none; font-weight:600;}
   .link:hover{text-decoration:underline;}
 
-  .signature{margin-top:26px; padding-top:16px; border-top:1px solid var(--line); font-family:var(--mono); font-size:11px; color:var(--dim); text-align:center;}
+  .signature{margin-top:32px; padding-top:20px; border-top:1px solid var(--line); font-size:12px; color:var(--dim); text-align:center;}
 </style>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
 </head>
@@ -868,7 +877,7 @@ function maskKeyClient(key){
       });
       renderBatch();
       const modeLabel = mode === 'keyframe' ? 'berdasarkan KeyframeSequence' : 'berdasarkan item top-level (fallback)';
-      splitStatus.innerHTML = `<div class="notice" style="background:var(--good-dim); color:#c9f5df; border-color:#1d6b47;">
+      splitStatus.innerHTML = `<div class="notice" style="background:var(--good-soft); color:#c9f5df;">
         Berhasil dipecah jadi <b>${results.length}</b> animasi (${modeLabel}). Sudah masuk ke tabel di Opsi B — cek nama &amp; klik "Upload Semua".
       </div>`;
     }catch(err){
@@ -984,7 +993,7 @@ function maskKeyClient(key){
         }
       }
       renderBatch();
-      zipStatus.innerHTML = `<div class="notice" style="background:var(--good-dim); color:#c9f5df; border-color:#1d6b47;">
+      zipStatus.innerHTML = `<div class="notice" style="background:var(--good-soft); color:#c9f5df;">
         ${added} animasi ditambahkan dari ZIP${splitExtra ? ` (termasuk ${splitExtra} hasil pemecahan otomatis dari file gabungan di dalam ZIP)` : ''}${skipped ? `, ${skipped} file gagal dibaca` : ''}. Cek nama di tabel Opsi B lalu klik "Upload Semua".
       </div>`;
     }catch(err){
@@ -1096,7 +1105,7 @@ function maskKeyClient(key){
       return;
     }
     downloadTextFile('config-updated.lua', newText, 'text/plain');
-    updateConfigResult.innerHTML = `<div class="notice" style="background:var(--good-dim); color:#c9f5df; border-color:#1d6b47;">
+    updateConfigResult.innerHTML = `<div class="notice" style="background:var(--good-soft); color:#c9f5df;">
       ${updatedCount} ID berhasil diupdate di config.${notFoundInConfig.length ? '<br>Tidak ketemu di config (perlu ditambah manual): ' + notFoundInConfig.map(escapeHtml).join(', ') : ''}
     </div>`;
   });
@@ -1249,7 +1258,7 @@ function maskKeyClient(key){
         }catch(e){ skipped++; }
       }
       renderBatch();
-      zipStatusAudio.innerHTML = `<div class="notice" style="background:var(--good-dim); color:#c9f5df; border-color:#1d6b47;">
+      zipStatusAudio.innerHTML = `<div class="notice" style="background:var(--good-soft); color:#c9f5df;">
         ${added} file audio ditambahkan dari ZIP${skipped ? `, ${skipped} file gagal dibaca` : ''}. Cek nama di tabel Opsi B lalu klik "Upload Semua".
       </div>`;
     }catch(err){
@@ -1382,7 +1391,7 @@ function maskKeyClient(key){
       return;
     }
     downloadTextFile('config-updated.lua', newText, 'text/plain');
-    updateConfigResultAudio.innerHTML = `<div class="notice" style="background:var(--good-dim); color:#c9f5df; border-color:#1d6b47;">
+    updateConfigResultAudio.innerHTML = `<div class="notice" style="background:var(--good-soft); color:#c9f5df;">
       ${updatedCount} ID berhasil diupdate di config.${notFoundInConfig.length ? '<br>Tidak ketemu di config (perlu ditambah manual): ' + notFoundInConfig.map(escapeHtml).join(', ') : ''}
     </div>`;
   });
@@ -1526,7 +1535,7 @@ function maskKeyClient(key){
       });
       const j = await r.json();
       if (!j.ok){ newKeyResult.innerHTML = `<div class="notice">${escapeHtml(j.error || 'Gagal membuat key.')}</div>`; return; }
-      newKeyResult.innerHTML = `<div class="notice" style="background:var(--good-dim); color:#c9f5df; border-color:#1d6b47;">
+      newKeyResult.innerHTML = `<div class="notice" style="background:var(--good-soft); color:#c9f5df;">
         Key baru: <b style="font-family:var(--mono); user-select:all;">${escapeHtml(j.key)}</b> — ${j.expiresAt ? 'berlaku sampai ' + new Date(j.expiresAt).toLocaleString('id-ID') : 'tidak pernah expired'}.
         <button class="small" style="margin-left:8px;" id="copyNewKeyBtn">Copy</button>
         <br><b>⚠️ Simpan sekarang</b> — server cuma menyimpan hash-nya, key ini tidak bisa ditampilkan ulang setelah kamu pindah halaman.
